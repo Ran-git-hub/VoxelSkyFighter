@@ -1,0 +1,328 @@
+// Pure terrain definition shared by the chunk worker and the main thread. Both
+// sides must agree on every height and tree, otherwise collisions would not
+// match what is drawn, so all of it is deterministic from WORLD_SEED alone.
+import { createSimplex, fbm, hash2, ridged } from "./Noise.js";
+
+export const WORLD_SEED = 1337;
+export const BLOCK = 2;
+export const SEA_LEVEL = -6;
+export const RUNWAY = { length: 900, width: 28, halfLength: 450, halfWidth: 14 };
+
+export const LAYERS = [
+  "grassTop", "grassSide", "dirt", "stone", "snow", "snowSide", "sand", "sandstone",
+  "gravel", "logSide", "logTop", "leaves", "spruceLeaves", "asphalt", "whiteConcrete", "concrete",
+  "bricks", "oakPlanks", "window", "metal", "redWool", "cactus", "tallGrass", "flowerRed",
+  "flowerYellow", "lamp", "clay", "spruceLog", "roofTiles", "cobble", "whiteWool", "darkPlanks",
+];
+export const L = Object.fromEntries(LAYERS.map((name, index) => [name, index]));
+
+export const BIOME = { OCEAN: 0, BEACH: 1, PLAINS: 2, FOREST: 3, DESERT: 4, SNOW: 5, MOUNTAIN: 6, AIRPORT: 7, TAIGA: 8 };
+
+const noiseContinent = createSimplex(WORLD_SEED);
+const noiseHills = createSimplex(WORLD_SEED + 1);
+const noiseMask = createSimplex(WORLD_SEED + 2);
+const noiseRidge = createSimplex(WORLD_SEED + 3);
+const noiseCanyon = createSimplex(WORLD_SEED + 4);
+const noiseTemp = createSimplex(WORLD_SEED + 5);
+const noiseMoist = createSimplex(WORLD_SEED + 6);
+
+const smoothstep = (a, b, x) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function airportWeight(x, z) {
+  const dx = Math.max(Math.abs(x) - 140, 0);
+  const dz = Math.max(Math.abs(z) - 560, 0);
+  return 1 - smoothstep(0, 280, Math.hypot(dx, dz));
+}
+
+export function sampleColumn(x, z, out) {
+  const distance = Math.hypot(x, z);
+  // Bias the continent noise near the origin so the airport never ends up on an island.
+  const continent = fbm(noiseContinent, x * 0.00042, z * 0.00042, 4) + 0.55 * (1 - smoothstep(600, 1800, distance));
+  const land = smoothstep(-0.3, 0.02, continent);
+
+  const hills = 7 + fbm(noiseHills, x * 0.0032, z * 0.0032, 4) * 16;
+  const mask = smoothstep(-0.08, 0.32, fbm(noiseMask, x * 0.0007 + 31.7, z * 0.0007 - 12.3, 3));
+  let mountain = 0;
+  if (mask > 0) {
+    mountain = Math.pow(ridged(noiseRidge, x * 0.0019, z * 0.0019, 5), 1.7) * 200 * mask;
+  }
+  let height = lerp(-16 - (1 - land) * 34, hills + mountain * land, land);
+
+  // Canyons follow the zero-crossings of a low-frequency field: deep slots in
+  // mountains, rivers in the lowlands.
+  const canyonField = Math.abs(fbm(noiseCanyon, x * 0.0011, z * 0.0011, 3));
+  const canyon = 1 - smoothstep(0.018, 0.055, canyonField);
+  if (canyon > 0) {
+    if (height > 34) {
+      height = lerp(height, Math.max(16, hills + 6), canyon * smoothstep(34, 70, height));
+    } else if (land > 0.5) {
+      height = lerp(height, SEA_LEVEL - 5, smoothstep(0.35, 0.8, canyon) * smoothstep(0.5, 0.8, land));
+    }
+  }
+
+  const airport = airportWeight(x, z);
+  const ax = Math.abs(x);
+  const az = Math.abs(z);
+  if (ax < 280 && az > 560) {
+    const corridor = (1 - smoothstep(110, 280, ax)) * (1 - smoothstep(1600, 2400, az));
+    const cap = (az - 560) * 0.11;
+    if (height > cap) {
+      height = lerp(height, cap, corridor);
+    }
+  }
+  height = lerp(height, 0, airport);
+
+  const blocks = Math.round(height / BLOCK);
+  const top = blocks * BLOCK;
+  const temperature = fbm(noiseTemp, x * 0.0005, z * 0.0005, 2) - Math.max(0, top - 40) * 0.004;
+  const moisture = fbm(noiseMoist, x * 0.0006 + 100, z * 0.0006 - 50, 2);
+
+  let biome;
+  if (airport > 0.92) {
+    biome = BIOME.AIRPORT;
+  } else if (top < SEA_LEVEL) {
+    biome = BIOME.OCEAN;
+  } else if (top <= SEA_LEVEL + 4 && land < 0.97) {
+    biome = BIOME.BEACH;
+  } else if (top > 150 || (temperature < -0.32 && top > 20)) {
+    biome = BIOME.SNOW;
+  } else if (top > 96) {
+    biome = BIOME.MOUNTAIN;
+  } else if (temperature > 0.2 && moisture < 0.02) {
+    biome = BIOME.DESERT;
+  } else if (temperature < -0.18) {
+    biome = BIOME.TAIGA;
+  } else if (moisture > 0.1) {
+    biome = BIOME.FOREST;
+  } else {
+    biome = BIOME.PLAINS;
+  }
+
+  out.blocks = blocks;
+  out.biome = biome;
+  out.airport = airport;
+  return out;
+}
+
+const scratch = { blocks: 0, biome: 0, airport: 0 };
+
+export function heightBlocksAt(x, z) {
+  return sampleColumn(x, z, scratch).blocks;
+}
+
+// Painted markings live in the terrain itself so the runway stays flush with
+// the ground and costs no extra draw calls.
+export function airportSurface(x, z) {
+  const ax = Math.abs(x);
+  const az = Math.abs(z);
+  if (ax < RUNWAY.halfWidth && az < RUNWAY.halfLength) {
+    if (ax >= RUNWAY.halfWidth - BLOCK) {
+      return L.whiteConcrete;
+    }
+    if (az > RUNWAY.halfLength - 34 && az < RUNWAY.halfLength - 14 && Math.floor(x / BLOCK) % 2 === 0) {
+      return L.whiteConcrete;
+    }
+    if (ax < BLOCK && Math.floor((z + 1000) / 12) % 2 === 0 && az < RUNWAY.halfLength - 40) {
+      return L.whiteConcrete;
+    }
+    return L.asphalt;
+  }
+  if (x > 40 && x < 126 && az < 170) {
+    return L.concrete;
+  }
+  if (x >= RUNWAY.halfWidth && x <= 40 && (az < 12 || Math.abs(az - 312) < 12)) {
+    return L.concrete;
+  }
+  return -1;
+}
+
+// Returns [top, side, sub, deep] layers for a column.
+export function columnLayers(biome, top, steep, x, z, out) {
+  if (biome === BIOME.AIRPORT) {
+    const paint = airportSurface(x, z);
+    out[0] = paint >= 0 ? paint : L.grassTop;
+    out[1] = paint >= 0 ? L.concrete : L.grassSide;
+    out[2] = L.dirt;
+    out[3] = L.stone;
+    return out;
+  }
+  if (biome === BIOME.OCEAN) {
+    const deep = top < SEA_LEVEL - 20;
+    out[0] = deep ? (hash2(x >> 3, z >> 3, 9) > 0.5 ? L.gravel : L.clay) : L.sand;
+    out[1] = out[0];
+    out[2] = L.sand;
+    out[3] = L.stone;
+    return out;
+  }
+  if (biome === BIOME.BEACH || biome === BIOME.DESERT) {
+    out[0] = L.sand;
+    out[1] = L.sand;
+    out[2] = biome === BIOME.DESERT ? L.sandstone : L.sand;
+    out[3] = L.sandstone;
+    if (steep && biome === BIOME.DESERT) {
+      out[0] = L.sandstone;
+      out[1] = L.sandstone;
+    }
+    return out;
+  }
+  if (biome === BIOME.SNOW) {
+    out[0] = L.snow;
+    out[1] = steep ? L.stone : L.snowSide;
+    out[2] = steep ? L.stone : L.dirt;
+    out[3] = L.stone;
+    return out;
+  }
+  if (biome === BIOME.MOUNTAIN || steep) {
+    out[0] = top > 70 || biome === BIOME.MOUNTAIN ? L.stone : steep ? L.stone : L.grassTop;
+    out[1] = L.stone;
+    out[2] = L.stone;
+    out[3] = L.stone;
+    if (biome === BIOME.MOUNTAIN && !steep && hash2(x >> 1, z >> 1, 3) > 0.7) {
+      out[0] = L.gravel;
+    }
+    return out;
+  }
+  out[0] = L.grassTop;
+  out[1] = L.grassSide;
+  out[2] = L.dirt;
+  out[3] = L.stone;
+  return out;
+}
+
+// Tree shapes in block units around the trunk's base; shared by the instanced
+// geometry and the collision test so the two can never disagree.
+export const TREE_SHAPES = [
+  {
+    name: "oak",
+    boxes: [
+      { min: [-0.5, 0, -0.5], max: [0.5, 5, 0.5], layer: L.logSide, sway: 0 },
+      { min: [-2.5, 3, -2.5], max: [2.5, 5, 2.5], layer: L.leaves, sway: 0.6 },
+      { min: [-1.5, 5, -1.5], max: [1.5, 6.5, 1.5], layer: L.leaves, sway: 1 },
+    ],
+  },
+  {
+    name: "spruce",
+    boxes: [
+      { min: [-0.5, 0, -0.5], max: [0.5, 7, 0.5], layer: L.spruceLog, sway: 0 },
+      { min: [-2.5, 2, -2.5], max: [2.5, 3.5, 2.5], layer: L.spruceLeaves, sway: 0.4 },
+      { min: [-2, 3.5, -2], max: [2, 5, 2], layer: L.spruceLeaves, sway: 0.6 },
+      { min: [-1.5, 5, -1.5], max: [1.5, 6.5, 1.5], layer: L.spruceLeaves, sway: 0.8 },
+      { min: [-0.5, 6.5, -0.5], max: [0.5, 8, 0.5], layer: L.spruceLeaves, sway: 1 },
+    ],
+  },
+  {
+    name: "cactus",
+    boxes: [
+      { min: [-0.5, 0, -0.5], max: [0.5, 3.5, 0.5], layer: L.cactus, sway: 0 },
+      { min: [0.5, 1.5, -0.25], max: [1.25, 2.25, 0.25], layer: L.cactus, sway: 0 },
+      { min: [0.75, 2.25, -0.25], max: [1.25, 3, 0.25], layer: L.cactus, sway: 0 },
+    ],
+  },
+];
+
+export const TREE_CELL = 8;
+const TREE_DENSITY = {
+  [BIOME.FOREST]: { chance: 0.62, type: 0 },
+  [BIOME.PLAINS]: { chance: 0.045, type: 0 },
+  [BIOME.TAIGA]: { chance: 0.5, type: 1 },
+  [BIOME.SNOW]: { chance: 0.12, type: 1 },
+  [BIOME.DESERT]: { chance: 0.05, type: 2 },
+};
+
+const treeColumn = { blocks: 0, biome: 0, airport: 0 };
+
+export function treeInCell(cx, cz, out) {
+  const roll = hash2(cx, cz, 71);
+  if (roll > 0.62) {
+    return null;
+  }
+  const bx = cx * (TREE_CELL / BLOCK) + Math.floor(hash2(cx, cz, 72) * (TREE_CELL / BLOCK));
+  const bz = cz * (TREE_CELL / BLOCK) + Math.floor(hash2(cx, cz, 73) * (TREE_CELL / BLOCK));
+  const x = (bx + 0.5) * BLOCK;
+  const z = (bz + 0.5) * BLOCK;
+  sampleColumn(x, z, treeColumn);
+  const density = TREE_DENSITY[treeColumn.biome];
+  if (!density || roll > density.chance || treeColumn.airport > 0.02) {
+    return null;
+  }
+  const blocks = treeColumn.blocks;
+  if (Math.abs(heightBlocksAt(x + BLOCK * 2, z) - blocks) > 2 || Math.abs(heightBlocksAt(x, z + BLOCK * 2) - blocks) > 2) {
+    return null;
+  }
+  if (insideLandmark(x, z)) {
+    return null;
+  }
+  out.type = density.type;
+  out.x = x;
+  out.y = blocks * BLOCK;
+  out.z = z;
+  out.scale = (0.85 + hash2(cx, cz, 74) * 0.5) * BLOCK;
+  out.tint = hash2(cx, cz, 75);
+  return out;
+}
+
+export function treeBoxes(tree, target) {
+  target.length = 0;
+  for (const box of TREE_SHAPES[tree.type].boxes) {
+    target.push({
+      minX: tree.x + box.min[0] * tree.scale,
+      minY: tree.y + box.min[1] * tree.scale,
+      minZ: tree.z + box.min[2] * tree.scale,
+      maxX: tree.x + box.max[0] * tree.scale,
+      maxY: tree.y + box.max[1] * tree.scale,
+      maxZ: tree.z + box.max[2] * tree.scale,
+    });
+  }
+  return target;
+}
+
+export const LANDMARK_CELL = 1100;
+const landmarkCache = new Map();
+const landmarkColumn = { blocks: 0, biome: 0, airport: 0 };
+
+export function landmarkInCell(cx, cz) {
+  const key = cx * 65536 + cz;
+  if (landmarkCache.has(key)) {
+    return landmarkCache.get(key);
+  }
+  let result = null;
+  if (hash2(cx, cz, 91) < 0.8) {
+    const x = Math.round(((cx + 0.5) * LANDMARK_CELL + (hash2(cx, cz, 92) - 0.5) * 520) / BLOCK) * BLOCK;
+    const z = Math.round(((cz + 0.5) * LANDMARK_CELL + (hash2(cx, cz, 93) - 0.5) * 520) / BLOCK) * BLOCK;
+    if (Math.hypot(x, z) > 900) {
+      sampleColumn(x, z, landmarkColumn);
+      const pick = hash2(cx, cz, 94);
+      let type = null;
+      if (landmarkColumn.biome === BIOME.PLAINS || landmarkColumn.biome === BIOME.FOREST) {
+        type = pick < 0.55 ? "village" : "windmill";
+      } else if (landmarkColumn.biome === BIOME.BEACH) {
+        type = "lighthouse";
+      } else if (landmarkColumn.biome === BIOME.DESERT) {
+        type = "pyramid";
+      } else if (landmarkColumn.biome === BIOME.MOUNTAIN || landmarkColumn.biome === BIOME.SNOW || landmarkColumn.biome === BIOME.TAIGA) {
+        type = "tower";
+      }
+      if (type) {
+        const radius = { village: 46, windmill: 12, lighthouse: 10, pyramid: 34, tower: 10 }[type];
+        result = { type, x, z, radius, seed: Math.floor(hash2(cx, cz, 95) * 1e9) };
+      }
+    }
+  }
+  if (landmarkCache.size > 4096) {
+    landmarkCache.clear();
+  }
+  landmarkCache.set(key, result);
+  return result;
+}
+
+export function insideLandmark(x, z) {
+  const landmark = landmarkInCell(Math.floor(x / LANDMARK_CELL), Math.floor(z / LANDMARK_CELL));
+  if (!landmark) {
+    return false;
+  }
+  return Math.abs(x - landmark.x) < landmark.radius + 6 && Math.abs(z - landmark.z) < landmark.radius + 6;
+}
