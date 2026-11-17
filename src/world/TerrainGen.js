@@ -15,6 +15,22 @@ function readSeed() {
 export const WORLD_SEED = readSeed();
 // Zero for the default seed, so the original world keeps its exact trees and landmarks.
 const SEED_SALT = WORLD_SEED - DEFAULT_SEED;
+
+// Noise alone keeps every world looking alike around the airport, so each seed also picks a
+// climate: temperature and moisture offsets plus how much of the land rises into mountains.
+const CLIMATES = [
+  { name: "temperate", temperature: 0, moisture: 0, mountains: 0 },
+  { name: "desert", temperature: 0.5, moisture: -0.4, mountains: -0.1 },
+  { name: "snowfield", temperature: -0.55, moisture: 0, mountains: 0.05 },
+  { name: "rainforest", temperature: 0.1, moisture: 0.35, mountains: -0.05 },
+  { name: "taiga", temperature: -0.3, moisture: 0.15, mountains: 0 },
+  { name: "highlands", temperature: -0.05, moisture: 0, mountains: 0.3 },
+  { name: "savanna", temperature: 0.3, moisture: -0.12, mountains: -0.15 },
+];
+export const CLIMATE = SEED_SALT === 0 ? CLIMATES[0] : CLIMATES[Math.floor(hash2(WORLD_SEED, 1, 977) * CLIMATES.length)];
+const CLIMATE_TEMPERATURE = CLIMATE.temperature;
+const CLIMATE_MOISTURE = CLIMATE.moisture;
+const MOUNTAIN_BIAS = CLIMATE.mountains;
 export const BLOCK = 2;
 export const SEA_LEVEL = -6;
 export const RUNWAY = { length: 900, width: 28, halfLength: 450, halfWidth: 14 };
@@ -56,7 +72,7 @@ export function sampleColumn(x, z, out) {
   const land = smoothstep(-0.3, 0.02, continent);
 
   const hills = 7 + fbm(noiseHills, x * 0.0032, z * 0.0032, 4) * 16;
-  const mask = smoothstep(-0.08, 0.32, fbm(noiseMask, x * 0.0007 + 31.7, z * 0.0007 - 12.3, 3));
+  const mask = smoothstep(-0.08, 0.32, fbm(noiseMask, x * 0.0007 + 31.7, z * 0.0007 - 12.3, 3) + MOUNTAIN_BIAS);
   let mountain = 0;
   if (mask > 0) {
     mountain = Math.pow(ridged(noiseRidge, x * 0.0019, z * 0.0019, 5), 1.7) * 200 * mask;
@@ -89,8 +105,8 @@ export function sampleColumn(x, z, out) {
 
   const blocks = Math.round(height / BLOCK);
   const top = blocks * BLOCK;
-  const temperature = fbm(noiseTemp, x * 0.0005, z * 0.0005, 2) - Math.max(0, top - 40) * 0.004;
-  const moisture = fbm(noiseMoist, x * 0.0006 + 100, z * 0.0006 - 50, 2);
+  const temperature = fbm(noiseTemp, x * 0.0005, z * 0.0005, 2) + CLIMATE_TEMPERATURE - Math.max(0, top - 40) * 0.004;
+  const moisture = fbm(noiseMoist, x * 0.0006 + 100, z * 0.0006 - 50, 2) + CLIMATE_MOISTURE;
 
   let biome;
   if (airport > 0.92) {

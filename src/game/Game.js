@@ -23,7 +23,7 @@ import { Life } from "../world/Life.js";
 import { Hud } from "../ui/Hud.js";
 import { DebugPanel } from "../ui/DebugPanel.js";
 import { Leaderboard } from "./Leaderboard.js";
-import { WORLD_SEED } from "../world/TerrainGen.js";
+import { CLIMATE, WORLD_SEED } from "../world/TerrainGen.js";
 import { runSelfTest } from "./SelfTest.js";
 
 const TRICK_LABELS = {
@@ -248,6 +248,7 @@ export class Game {
       wave: this.wave,
       paused: this.paused,
       seed: WORLD_SEED,
+      climate: CLIMATE.name,
       mode: this.mode,
       board: this.boardState(),
       result: this.submitResult,

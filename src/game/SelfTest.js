@@ -59,6 +59,8 @@ export function runSelfTest(game) {
 
   check("straight flight scores nothing", () => {
     takeOff();
+    // High enough that no seed's hills lie across the straight line ahead.
+    game.player.mesh.position.y += 250;
     const before = game.score;
     run(20);
     return { passed: game.score === before && game.state === GAME_STATES.FLYING, detail: `score ${game.score - before}` };

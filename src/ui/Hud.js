@@ -423,7 +423,7 @@ export class Hud {
     }
   }
 
-  setOverlay(state, { score = 0, best = 0, wave = 0, paused = false, seed = 0, mode = "combat", board = null, result = null } = {}) {
+  setOverlay(state, { score = 0, best = 0, wave = 0, paused = false, seed = 0, climate = "", mode = "combat", board = null, result = null } = {}) {
     this.settingsEl.classList.toggle("hidden", !(paused || state === GAME_STATES.START || state === GAME_STATES.GAME_OVER));
     if (state === GAME_STATES.START) {
       this.overlayEl.className = "overlay overlay-title";
@@ -441,6 +441,7 @@ export class Hud {
             <input id="seed-input" class="seed-input" type="text" inputmode="numeric" maxlength="9" value="${seed}" />
             <button class="mini-button" type="button" data-action="seed">Go</button>
             <button class="mini-button" type="button" data-action="random-seed">Random</button>
+            <span class="climate">${climate}</span>
           </div>
           ${this.boardMarkup(board)}
           <p class="hint">Best score: <strong>${best}</strong> &middot; <strong>H</strong> controls &middot; <strong>O</strong> photo mode</p>

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { setupWorldMaterial, worldUniforms } from "./WorldShading.js";
+import { DEFAULT_SEED, WORLD_SEED } from "./TerrainGen.js";
 
 const CLOUD_CELL = 12;
 const CLOUD_GRID = 32;
@@ -14,7 +15,7 @@ const CLOUD_COVERAGE = 0.32;
 const CLOUD_SHADE = { top: 1, bottom: 0.55, side: 0.82 };
 
 function cloudPattern() {
-  let seed = 20240917;
+  let seed = 20240917 + (WORLD_SEED - DEFAULT_SEED);
   const random = () => {
     seed = (seed * 16807) % 2147483647;
     return (seed - 1) / 2147483646;

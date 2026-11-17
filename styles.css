@@ -899,3 +899,11 @@ body {
   background: rgba(0, 0, 0, 0.55);
   transform: translateX(-50%);
 }
+
+.climate {
+  min-width: 80px;
+  font-size: 14px;
+  color: #8fd3ff;
+  text-align: left;
+  text-transform: capitalize;
+}
