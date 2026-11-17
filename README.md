@@ -82,8 +82,6 @@ src/
   entities/         Player plane, enemies, bullets and missiles, rings
   world/            Terrain generation, chunk meshing, sky, clouds, weather, water, buildings, ambient life
   ui/               HUD and debug panel
-PLAN.md             First-phase improvement plan (done, in Chinese)
-PLAN_V2.md          2.x release plan (in Chinese)
 ```
 
 ## License
