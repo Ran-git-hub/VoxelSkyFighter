@@ -5,12 +5,12 @@ const SEGMENTS = 16;
 const SEGMENT_GEOMETRY = new THREE.BoxGeometry(2.4, 2.4, 2.4);
 
 export class Ring {
-  constructor(position, yaw) {
+  constructor(position, yaw, color = 0xffd257) {
     this.mesh = new THREE.Group();
     this.mesh.position.copy(position);
     this.mesh.rotation.y = yaw;
     this.normal = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-    this.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd257).multiplyScalar(2.2), fog: false });
+    this.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(2.2), fog: false });
     for (let i = 0; i < SEGMENTS; i += 1) {
       const angle = (i / SEGMENTS) * Math.PI * 2;
       const segment = new THREE.Mesh(SEGMENT_GEOMETRY, this.material);

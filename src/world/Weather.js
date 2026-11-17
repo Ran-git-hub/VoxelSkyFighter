@@ -128,9 +128,10 @@ export class Weather {
   }
 
   // A blocky bolt: straight drops joined by sideways jogs, like a staircase of light.
-  strike(cameraPosition) {
+  // With `at`, the bolt is slid sideways so it passes through that point (a strike on the player).
+  strike(cameraPosition, at = null) {
     const angle = Math.random() * Math.PI * 2;
-    const distance = 220 + Math.random() * 480;
+    const distance = at ? 0 : 220 + Math.random() * 480;
     let x = cameraPosition.x + Math.cos(angle) * distance;
     let z = cameraPosition.z + Math.sin(angle) * distance;
     const ground = this.heightAt ? this.heightAt(x, z) : 0;
@@ -150,6 +151,16 @@ export class Weather {
         segment.scale.set(alongX ? Math.abs(jog) + 3 : 3, 3, alongX ? 3 : Math.abs(jog) + 3);
         x += alongX ? jog : 0;
         z += alongX ? 0 : jog;
+      }
+    }
+    if (at) {
+      const drop = this.bolt.children.find((segment, i) => i % 2 === 0 && Math.abs(segment.position.y - at.y) <= segment.scale.y / 2);
+      const anchor = drop ?? this.bolt.children[0];
+      const dx = at.x - anchor.position.x;
+      const dz = at.z - anchor.position.z;
+      for (const segment of this.bolt.children) {
+        segment.position.x += dx;
+        segment.position.z += dz;
       }
     }
     this.bolt.visible = true;

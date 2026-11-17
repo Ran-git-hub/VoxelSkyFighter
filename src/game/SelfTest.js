@@ -122,6 +122,107 @@ export function runSelfTest(game) {
     return { passed, detail: `state ${game.state}, enemies ${game.enemies.length}` };
   });
 
+  // Missions start from the stage before them, high above the terrain so the plane can fly straight.
+  const startStage = (wave) => {
+    takeOff();
+    game.player.mesh.position.y += 250;
+    game.wave = wave - 1;
+    game.waveTimer = 0;
+    run(0.1);
+    game.waveQueue.length = 0;
+    return game.mission;
+  };
+
+  check("faster plane cruises faster", () => {
+    const savedPlane = game.player.skin;
+    const cruise = (skin) => {
+      game.player.setSkin(skin);
+      takeOff();
+      game.player.mesh.position.y += 250;
+      run(10);
+      return game.player.speed;
+    };
+    const jet = cruise("f16");
+    const biplane = cruise("brickbiplane");
+    game.player.setSkin(savedPlane);
+    return { passed: jet > biplane * 1.3, detail: `f16 ${jet.toFixed(1)}, biplane ${biplane.toFixed(1)}` };
+  });
+
+  check("throttle holds a cruise speed", () => {
+    takeOff();
+    game.player.mesh.position.y += 250;
+    game.player.throttle = 0;
+    run(10);
+    const slow = game.player.speed;
+    game.player.throttle = 1;
+    run(10);
+    const fast = game.player.speed;
+    run(2);
+    const steady = Math.abs(game.player.speed - fast) < 1;
+    return { passed: fast > slow + 20 && steady, detail: `${slow.toFixed(1)} -> ${fast.toFixed(1)}` };
+  });
+
+  check("strike mission completes", () => {
+    const mission = startStage(2);
+    if (mission?.type !== "strike") {
+      return { passed: false, detail: `stage ${mission?.type ?? "plain wave"}` };
+    }
+    const before = game.score;
+    for (const target of mission.targets) {
+      target.alive = false;
+    }
+    run(0.2);
+    return { passed: !game.mission && !game.waveActive && game.score > before, detail: `${mission.targets.length} targets` };
+  });
+
+  check("race mission counts rings", () => {
+    const mission = startStage(4);
+    if (mission?.type !== "race") {
+      return { passed: false, detail: `stage ${mission?.type}` };
+    }
+    const position = game.player.mesh.position;
+    for (const ring of game.rings.filter((item) => item.race)) {
+      position.copy(ring.mesh.position).addScaledVector(ring.normal, -3);
+      game.updateRings();
+      position.copy(ring.mesh.position).addScaledVector(ring.normal, 3);
+      game.updateRings();
+    }
+    const passed = mission.passed;
+    run(0.2);
+    return { passed: passed === 8 && !game.mission, detail: `rings ${passed}` };
+  });
+
+  check("escort fails when the transport is lost", () => {
+    const mission = startStage(7);
+    if (mission?.type !== "escort") {
+      return { passed: false, detail: `stage ${mission?.type}` };
+    }
+    game.transport.health = 0;
+    run(0.2);
+    return { passed: !game.mission && !game.transport, detail: "transport destroyed" };
+  });
+
+  check("boss falls once its engines are gone", () => {
+    const mission = startStage(5);
+    if (mission?.type !== "boss") {
+      return { passed: false, detail: `stage ${mission?.type}` };
+    }
+    const boss = game.boss;
+    const engines = boss.parts.filter((part) => part.kind === "bossEngine");
+    game.damageEnemy(engines[0], 100);
+    const armored = engines[0].alive;
+    for (const part of boss.parts.filter((item) => item.kind === "bossGun")) {
+      game.damageEnemy(part, 100);
+    }
+    run(0.2);
+    const exposed = boss.phase === "engines";
+    for (const engine of engines) {
+      game.damageEnemy(engine, 100);
+    }
+    const down = run(20, () => !game.mission);
+    return { passed: armored && exposed && down && !game.boss, detail: `armored ${armored}, exposed ${exposed}, down ${down}` };
+  });
+
   game.mode = savedMode;
   game.reset();
   const failed = results.filter((result) => !result.passed).length;

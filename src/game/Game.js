@@ -15,6 +15,8 @@ import { PlayerPlane } from "../entities/PlayerPlane.js";
 import { EnemyPlane } from "../entities/EnemyPlane.js";
 import { Missile, Projectile } from "../entities/Projectile.js";
 import { Ring } from "../entities/Ring.js";
+import { Boss, BOSS_MOUNTS, Transport } from "../entities/Boss.js";
+import { AIRCRAFT, DIFFICULTY, aircraftById } from "./Aircraft.js";
 import { VoxelWorld } from "../world/VoxelWorld.js";
 import { Atmosphere } from "../world/Atmosphere.js";
 import { installShaderPatches } from "../world/WorldShading.js";
@@ -33,9 +35,23 @@ const TRICK_LABELS = {
   ring: "RING!",
 };
 
+// Every fifth stage is the boss; two of the four stages in between are missions, in this rotation.
+const MISSION_ORDER = ["strike", "race", "escort", "antiship"];
+const MISSION_TITLES = {
+  strike: "GROUND STRIKE",
+  race: "RING RACE",
+  escort: "ESCORT",
+  antiship: "SINK THE FLEET",
+  boss: "SKY FORTRESS",
+};
+const RACE_RINGS = 8;
+const LIGHTNING_HEIGHT = 100;
+
 const STORAGE_PREFIX = "vsf.";
 const DEFAULT_SETTINGS = {
   plane: "standard",
+  difficulty: "normal",
+  weatherFlight: true,
   time: "noon",
   weather: "auto",
   quality: "high",
@@ -92,6 +108,14 @@ export class Game {
     this.audio = new AudioManager();
     this.settings = { ...DEFAULT_SETTINGS, ...loadStored("settings", {}) };
     this.best = loadStored("best", 0);
+    // Career points unlock planes. Saves from before unlocks existed start from their best score.
+    this.career = loadStored("career", null) ?? this.best;
+    store("career", this.career);
+    if (!this.isUnlocked(this.settings.plane)) {
+      this.settings.plane = "standard";
+    }
+    this.hangarIndex = AIRCRAFT.findIndex((plane) => plane.id === this.settings.plane);
+    this.unlockedNow = [];
     this.hud = new Hud(hudRoot, {
       settings: this.settings,
       onSettingChange: (key, value) => {
@@ -111,6 +135,10 @@ export class Game {
     this.state = GAME_STATES.START;
     this.mode = "combat";
     this.photo = null;
+    this.boss = null;
+    this.transport = null;
+    this.mission = null;
+    this.difficulty = DIFFICULTY.normal;
     this.respawns = 0;
     this.submitResult = null;
     this.leaderboard = new Leaderboard();
@@ -176,6 +204,26 @@ export class Game {
     this.deathTimer = 0;
     this.warningTimer = 0;
     this.sortieTime = 0;
+    this.lightningTimer = 15;
+    this.gust = { roll: 0, lift: 0, rollTarget: 0, liftTarget: 0, timer: 0 };
+  }
+
+  isUnlocked(id) {
+    return this.career >= aircraftById(id).unlock;
+  }
+
+  scaled(points) {
+    return Math.round(points * (this.mode === "combat" ? this.difficulty.score : 1));
+  }
+
+  hangarState() {
+    const plane = AIRCRAFT[this.hangarIndex];
+    return {
+      plane: { ...plane, unlocked: this.isUnlocked(plane.id) },
+      index: this.hangarIndex,
+      count: AIRCRAFT.length,
+      flying: this.settings.plane,
+    };
   }
 
   applySetting(key) {
@@ -252,6 +300,10 @@ export class Game {
       mode: this.mode,
       board: this.boardState(),
       result: this.submitResult,
+      hangar: this.hangarState(),
+      career: this.career,
+      difficulty: `Difficulty: ${(DIFFICULTY[this.settings.difficulty] ?? DIFFICULTY.normal).label}`,
+      unlocked: this.unlockedNow,
     });
   }
 
@@ -259,6 +311,16 @@ export class Game {
     this.audio.ensureStarted();
     if (action === "combat" || action === "free") {
       this.startRun(action);
+    } else if (action === "plane-prev" || action === "plane-next") {
+      this.audio.playClick();
+      this.hangarIndex = (this.hangarIndex + (action === "plane-next" ? 1 : -1) + AIRCRAFT.length) % AIRCRAFT.length;
+      const plane = AIRCRAFT[this.hangarIndex];
+      if (this.isUnlocked(plane.id)) {
+        this.settings.plane = plane.id;
+        store("settings", this.settings);
+        this.applySetting("plane");
+      }
+      this.refreshOverlay();
     } else if (action === "rename") {
       this.audio.playClick();
       this.leaderboard.rename();
@@ -280,10 +342,15 @@ export class Game {
       return;
     }
     this.mode = mode;
+    this.difficulty = DIFFICULTY[this.settings.difficulty] ?? DIFFICULTY.normal;
+    this.unlockedNow = [];
     this.audio.playClick();
     this.input.clearAimToCenter();
     this.input.requestLock();
     this.state = GAME_STATES.TAXI;
+    this.player.armorBonus = mode === "combat" ? this.difficulty.armor : 0;
+    this.player.health = this.player.maxHealth;
+    this.player.missiles = this.player.maxMissiles;
     this.player.beginRun();
     this.paused = false;
     if (mode === "free") {
@@ -327,6 +394,14 @@ export class Game {
       }
       list.length = 0;
     }
+    for (const object of [this.boss, this.transport]) {
+      if (object) {
+        this.disposeObject(object.mesh);
+      }
+    }
+    this.boss = null;
+    this.transport = null;
+    this.mission = null;
     this.effects.clear();
     this.hud.clearToasts();
     this.resetRun();
@@ -410,6 +485,12 @@ export class Game {
     }
 
     const playing = PLAYING_STATES.has(this.state) && !this.paused && !this.photo;
+    if (!this.photo) {
+      const wheel = this.input.consumeLook().wheel;
+      if (playing && wheel !== 0) {
+        this.player.throttle = THREE.MathUtils.clamp(this.player.throttle - wheel * 0.1, 0, 1);
+      }
+    }
     if (playing) {
       this.simulate(delta);
     }
@@ -496,6 +577,12 @@ export class Game {
     if (this.state === GAME_STATES.GAME_OVER) {
       return;
     }
+    if (player.state === GAME_STATES.FLYING) {
+      this.applyWeather(delta);
+      if (this.state === GAME_STATES.GAME_OVER) {
+        return;
+      }
+    }
     this.state = player.state;
     if (previousState === GAME_STATES.FLYING && this.state === GAME_STATES.LANDING) {
       this.suspendWave();
@@ -548,13 +635,14 @@ export class Game {
 
   completeLanding() {
     const player = this.player;
-    const repaired = player.health < PLAYER_CONFIG.maxHealth || player.missiles < PLAYER_CONFIG.maxMissiles;
-    player.health = PLAYER_CONFIG.maxHealth;
-    player.missiles = PLAYER_CONFIG.maxMissiles;
+    const repaired = player.health < player.maxHealth || player.missiles < player.maxMissiles;
+    player.health = player.maxHealth;
+    player.missiles = player.maxMissiles;
     // The bonus is for bringing a real sortie home by hand, not for hopping along the strip.
     if (player.manualLanding && this.sortieTime > 20) {
-      this.score += PLAYER_CONFIG.landingRepairBonus;
-      this.hud.showToast("SMOOTH LANDING!", PLAYER_CONFIG.landingRepairBonus, 1);
+      const bonus = this.scaled(PLAYER_CONFIG.landingRepairBonus);
+      this.score += bonus;
+      this.hud.showToast("SMOOTH LANDING!", bonus, 1);
     }
     if (repaired) {
       this.hud.showBanner("REPAIRED & REARMED", "Hold Shift to take off again");
@@ -590,7 +678,7 @@ export class Game {
     this.combo = Math.min(this.combo + 1, STUNT_CONFIG.maxCombo);
     this.comboTimer = STUNT_CONFIG.comboWindow;
 
-    const points = STUNT_CONFIG.scores[type] * this.combo;
+    const points = this.scaled(STUNT_CONFIG.scores[type] * this.combo);
     this.score += points;
     this.hud.showToast(TRICK_LABELS[type], points, this.combo);
     this.audio.playTrick(this.combo);
@@ -612,8 +700,9 @@ export class Game {
 
   waveComposition(wave) {
     const kinds = [];
+    const scale = this.difficulty.enemies;
     const add = (kind, count) => {
-      for (let i = 0; i < count; i += 1) {
+      for (let i = 0; i < Math.round(count * scale); i += 1) {
         kinds.push(kind);
       }
     };
@@ -621,6 +710,9 @@ export class Game {
     add("gunner", wave >= 2 ? Math.min(5, 1 + Math.floor((wave - 2) / 2)) : 0);
     add("ace", Math.min(3, Math.floor(wave / 4)));
     add("turret", wave >= 3 ? Math.min(3, 1 + Math.floor((wave - 3) / 3)) : 0);
+    if (kinds.length === 0) {
+      kinds.push("rammer");
+    }
     // Shuffle so the dangerous ones are not always held back to the end.
     for (let i = kinds.length - 1; i > 0; i -= 1) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -629,16 +721,32 @@ export class Game {
     return kinds;
   }
 
+  stageType(wave) {
+    const slot = wave % 5;
+    if (slot === 0) {
+      return "boss";
+    }
+    if (slot === 2 || slot === 4) {
+      return MISSION_ORDER[(Math.floor(wave / 5) * 2 + (slot === 4 ? 1 : 0)) % MISSION_ORDER.length];
+    }
+    return "wave";
+  }
+
   startWave() {
     this.wave += 1;
     this.waveActive = true;
-    this.waveQueue = this.waveComposition(this.wave);
+    this.mission = null;
     this.enemySpawnTimer = 1.5;
     if (this.wave > 1) {
-      this.player.missiles = Math.min(PLAYER_CONFIG.maxMissiles, this.player.missiles + 1);
+      this.player.missiles = Math.min(this.player.maxMissiles, this.player.missiles + 1);
     }
-    this.hud.showBanner(`WAVE ${this.wave}`, `${this.waveQueue.length} hostiles inbound`);
     this.audio.playWaveStart();
+    const type = this.stageType(this.wave);
+    if (type !== "wave" && this.startMission(type)) {
+      return;
+    }
+    this.waveQueue = this.waveComposition(this.wave);
+    this.hud.showBanner(`WAVE ${this.wave}`, `${this.waveQueue.length} hostiles inbound`);
     this.spawnRings();
     for (let i = 0; i < 3; i += 1) {
       this.spawnEnemy("balloon");
@@ -665,14 +773,307 @@ export class Game {
       }
     }
 
+    if (this.mission) {
+      const outcome = this.updateMission(delta);
+      if (outcome) {
+        this.endMission(outcome === "success");
+      }
+      return;
+    }
+
     const remaining = this.waveQueue.length + this.enemies.filter((enemy) => enemy.alive && enemy.countsForWave).length;
     if (remaining === 0) {
-      const bonus = WAVE_CONFIG.clearBonus * this.wave;
+      const bonus = this.scaled(WAVE_CONFIG.clearBonus * this.wave);
       this.score += bonus;
       this.waveActive = false;
       this.waveTimer = WAVE_CONFIG.intermission;
       this.hud.showBanner(`WAVE ${this.wave} CLEARED`, `+${bonus} bonus`);
       this.audio.playWaveClear();
+    }
+  }
+
+  // --- Missions ----------------------------------------------------------
+
+  // A spot ahead of the player that passes `accept(x, z, terrain)`, or null.
+  findSite(accept, near, far, spread) {
+    const forward = this.forwardFlat();
+    const lateral = new THREE.Vector3(-forward.z, 0, forward.x);
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const site = this.player.mesh.position
+        .clone()
+        .addScaledVector(forward, THREE.MathUtils.randFloat(near, far))
+        .addScaledVector(lateral, THREE.MathUtils.randFloatSpread(spread));
+      const terrain = this.world.heightAt(site.x, site.z);
+      if (accept(site.x, site.z, terrain)) {
+        return site.setY(terrain);
+      }
+    }
+    return null;
+  }
+
+  dryFlatGround(x, z, terrain) {
+    const sea = this.world.seaLevel;
+    if (terrain <= sea + 1 || (Math.abs(x) < 120 && Math.abs(z) < 700)) {
+      return false;
+    }
+    return [[30, 0], [-30, 0], [0, 30], [0, -30]].every(([dx, dz]) => Math.abs(this.world.heightAt(x + dx, z + dz) - terrain) < 7);
+  }
+
+  openWater(x, z) {
+    const limit = this.world.seaLevel - 4;
+    return [[0, 0], [45, 0], [-45, 0], [0, 45], [0, -45]].every(([dx, dz]) => this.world.heightAt(x + dx, z + dz) < limit);
+  }
+
+  startMission(type) {
+    const wave = this.wave;
+    const mission = { type, title: MISSION_TITLES[type], timer: null, targets: [], passed: 0 };
+    if (type === "strike" || type === "antiship") {
+      const ships = type === "antiship";
+      const site = ships
+        ? this.findSite((x, z) => this.openWater(x, z), 380, 1300, 1400)
+        : this.findSite((x, z, terrain) => this.dryFlatGround(x, z, terrain), 320, 620, 500);
+      if (!site) {
+        // A dry world has no fleet to sink, so fall back to a strike; failing that, a plain wave.
+        return ships ? this.startMission("strike") : false;
+      }
+      if (ships) {
+        const count = Math.min(4, 2 + Math.floor(wave / 8));
+        for (let i = 0; i < count; i += 1) {
+          const spot = site.clone().add(new THREE.Vector3(THREE.MathUtils.randFloatSpread(90), 0, THREE.MathUtils.randFloatSpread(90)));
+          if (this.world.heightAt(spot.x, spot.z) < this.world.seaLevel - 3) {
+            mission.targets.push(this.addEnemy("ship", spot.setY(this.world.seaLevel), Math.random() * Math.PI * 2));
+          }
+        }
+        if (mission.targets.length === 0) {
+          mission.targets.push(this.addEnemy("ship", site.setY(this.world.seaLevel), Math.random() * Math.PI * 2));
+        }
+        mission.timer = 150;
+        mission.reward = 2000 + 250 * wave;
+        this.waveQueue = Array.from({ length: Math.round((2 + Math.floor(wave / 4)) * this.difficulty.enemies) }, () => "rammer");
+      } else {
+        const heading = Math.random() * Math.PI * 2;
+        for (let i = 0; i < 4; i += 1) {
+          const spot = site.clone().add(new THREE.Vector3(Math.sin(heading) * (i - 1.5) * 12, 0, Math.cos(heading) * (i - 1.5) * 12));
+          mission.targets.push(this.addEnemy("truck", spot.setY(this.world.heightAt(spot.x, spot.z)), heading));
+        }
+        for (let i = 0; i < 3; i += 1) {
+          const angle = (i / 3) * Math.PI * 2;
+          const spot = site.clone().add(new THREE.Vector3(Math.cos(angle) * 34, 0, Math.sin(angle) * 34));
+          const terrain = this.world.heightAt(spot.x, spot.z);
+          if (terrain > this.world.seaLevel + 1) {
+            mission.targets.push(this.addEnemy("turret", spot.setY(terrain)));
+          }
+        }
+        mission.timer = 120;
+        mission.reward = 1500 + 250 * wave;
+        this.waveQueue = Array.from({ length: Math.round((1 + Math.floor(wave / 3)) * this.difficulty.enemies) }, () => "gunner");
+      }
+      mission.site = site;
+      for (const target of mission.targets) {
+        target.persistent = true;
+      }
+    } else if (type === "escort") {
+      const forward = this.forwardFlat();
+      const lateral = new THREE.Vector3(-forward.z, 0, forward.x);
+      const start = this.player.mesh.position.clone().addScaledVector(forward, 110).addScaledVector(lateral, 30);
+      start.y = Math.max(start.y, this.groundAt(start.x, start.z) + 50);
+      const destination = start.clone().addScaledVector(forward, 1500).addScaledVector(lateral, THREE.MathUtils.randFloatSpread(600));
+      this.transport = new Transport(start, destination);
+      this.transport.mesh.rotation.y = Math.atan2(forward.x, forward.z);
+      this.scene.add(this.transport.mesh);
+      mission.reward = 2000 + 300 * wave;
+      const count = Math.round((4 + Math.floor(wave / 2)) * this.difficulty.enemies);
+      this.waveQueue = Array.from({ length: count }, (_, i) => (i % 3 === 2 ? "gunner" : "rammer"));
+    } else if (type === "race") {
+      this.spawnRaceRings();
+      mission.timer = 55;
+      mission.reward = 1500 + 200 * wave;
+      this.waveQueue = [];
+    } else if (type === "boss") {
+      const forward = this.forwardFlat();
+      const position = this.player.mesh.position.clone().addScaledVector(forward, 480);
+      position.y = Math.min(this.groundAt(position.x, position.z) + 85, PLAYER_CONFIG.maxAltitude - 20);
+      this.boss = new Boss(position, Math.atan2(-forward.x, -forward.z));
+      this.scene.add(this.boss.mesh);
+      for (const mount of BOSS_MOUNTS) {
+        const part = this.addEnemy(mount.kind, position.clone());
+        part.mount = mount.offset;
+        part.persistent = true;
+        part.countsForWave = false;
+        part.armored = mount.kind === "bossEngine";
+        this.boss.parts.push(part);
+      }
+      this.boss.placeParts();
+      mission.reward = 3000 * Math.ceil(wave / 5);
+      mission.maxHealth = this.boss.parts.reduce((sum, part) => sum + part.config.health, 0);
+      this.waveQueue = Array.from({ length: Math.round(2 * this.difficulty.enemies) }, () => "gunner");
+    }
+    this.mission = mission;
+    this.hud.showBanner(mission.title, this.missionBrief(mission));
+    return true;
+  }
+
+  missionBrief(mission) {
+    return {
+      strike: "Destroy the convoy and its flak guns",
+      antiship: "Sink every enemy warship",
+      escort: "Keep the green transport alive until it lands",
+      race: `Fly through all ${RACE_RINGS} blue rings before time runs out`,
+      boss: "Knock out the guns, then the engines",
+    }[mission.type];
+  }
+
+  spawnRaceRings() {
+    const position = this.player.mesh.position.clone();
+    let yaw = this.player.mesh.rotation.y;
+    for (let i = 0; i < RACE_RINGS; i += 1) {
+      yaw += THREE.MathUtils.randFloatSpread(0.7);
+      const step = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)).multiplyScalar(i === 0 ? 220 : 165);
+      position.add(step);
+      let ground = -Infinity;
+      for (const [dx, dz] of [[0, 0], [24, 0], [-24, 0], [0, 24], [0, -24]]) {
+        ground = Math.max(ground, this.groundAt(position.x + dx, position.z + dz));
+      }
+      position.y = Math.min(ground + THREE.MathUtils.randFloat(24, 55), PLAYER_CONFIG.maxAltitude - 20);
+      const ring = new Ring(position, yaw, 0x55ffff);
+      ring.race = true;
+      this.rings.push(ring);
+      this.scene.add(ring.mesh);
+    }
+  }
+
+  // Returns "success", "fail" or null while the mission is still running.
+  updateMission(delta) {
+    const mission = this.mission;
+    if (mission.timer !== null) {
+      mission.timer -= delta;
+    }
+    let done = false;
+    if (mission.type === "strike" || mission.type === "antiship") {
+      done = mission.targets.every((target) => !target.alive);
+    } else if (mission.type === "race") {
+      done = mission.passed >= RACE_RINGS;
+    } else if (mission.type === "escort") {
+      const transport = this.transport;
+      transport.update(delta, this.world);
+      if (transport.health <= 0) {
+        transport.alive = false;
+        this.effects.explosion(transport.mesh.position, 0xff9357, true);
+        this.audio.playExplosion(transport.mesh.position, "large");
+        return "fail";
+      }
+      done = transport.arrived;
+    } else if (mission.type === "boss") {
+      this.updateBoss(delta);
+      done = this.boss.crashed;
+    }
+    if (done) {
+      return "success";
+    }
+    return mission.timer !== null && mission.timer <= 0 ? "fail" : null;
+  }
+
+  endMission(success) {
+    const mission = this.mission;
+    let bonus = 0;
+    if (success) {
+      bonus = mission.reward;
+      if (mission.timer !== null) {
+        bonus += Math.round(mission.timer) * 20;
+      }
+      if (mission.type === "escort") {
+        bonus += this.transport.health * 100;
+      }
+      bonus = this.scaled(bonus);
+      this.score += bonus;
+      this.hud.showBanner("MISSION COMPLETE", `${mission.title} +${bonus}`);
+      this.audio.playWaveClear();
+    } else {
+      this.hud.showBanner("MISSION FAILED", "No bonus - get ready for the next one");
+      this.audio.playDenied();
+    }
+    // Leftover targets stay in the world but no longer hold up the next stage.
+    for (const target of mission.targets) {
+      target.countsForWave = false;
+      target.persistent = false;
+    }
+    this.rings = this.rings.filter((ring) => {
+      if (ring.race) {
+        this.disposeObject(ring.mesh);
+        return false;
+      }
+      return true;
+    });
+    if (this.transport) {
+      this.disposeObject(this.transport.mesh);
+      this.transport = null;
+    }
+    if (this.boss) {
+      this.disposeObject(this.boss.mesh);
+      this.boss = null;
+    }
+    this.waveQueue = [];
+    this.mission = null;
+    this.waveActive = false;
+    this.waveTimer = WAVE_CONFIG.intermission + 2;
+  }
+
+  updateBoss(delta) {
+    const boss = this.boss;
+    boss.update(delta, this.world, this.player.mesh.position);
+    const guns = boss.parts.filter((part) => part.kind === "bossGun" && part.alive).length;
+    const engines = boss.parts.filter((part) => part.kind === "bossEngine" && part.alive).length;
+    if (boss.phase === "guns" && guns === 0) {
+      boss.phase = "engines";
+      for (const part of boss.parts) {
+        if (part.kind === "bossEngine") {
+          part.armored = false;
+          for (const glow of part.glows) {
+            glow.material.color.setHex(0xff7a2a).multiplyScalar(5);
+          }
+        }
+      }
+      this.hud.showBanner("ENGINES EXPOSED", "The fortress is launching drones!");
+      this.audio.playWaveStart();
+    }
+    if (boss.phase === "engines") {
+      boss.droneTimer -= delta;
+      if (boss.droneTimer <= 0) {
+        boss.droneTimer = 11;
+        for (let i = 0; i < 2; i += 1) {
+          const spot = boss.mesh.position.clone().add(new THREE.Vector3(THREE.MathUtils.randFloatSpread(30), -14, THREE.MathUtils.randFloatSpread(30)));
+          const drone = this.addEnemy("rammer", spot);
+          drone.countsForWave = false;
+        }
+      }
+      if (engines === 0) {
+        boss.phase = "falling";
+        boss.velocity.y = 0;
+        this.hud.showBanner("FORTRESS GOING DOWN!", "");
+        this.shake = Math.max(this.shake, 1);
+      }
+    }
+    if (boss.phase === "falling") {
+      boss.smokeTimer = (boss.smokeTimer ?? 0) - delta;
+      if (boss.smokeTimer <= 0) {
+        boss.smokeTimer = 0.12;
+        this.effects.smoke(boss.randomHullPoint(), true);
+        if (Math.random() < 0.35) {
+          const point = boss.randomHullPoint();
+          this.effects.explosion(point, 0xff9357, Math.random() < 0.3);
+          this.audio.playExplosion(point);
+        }
+      }
+      if (boss.crashed) {
+        const center = boss.mesh.position;
+        for (let i = 0; i < 9; i += 1) {
+          this.effects.explosion(boss.randomHullPoint(), i % 2 ? 0xffd257 : 0xff5b2a, true);
+        }
+        this.effects.flash(center, 0xffb060, 30000, 0.6);
+        this.splashIfSea(center);
+        this.audio.playExplosion(center, "large");
+        this.shake = Math.max(this.shake, 1.6);
+      }
     }
   }
 
@@ -730,12 +1131,24 @@ export class Game {
           continue;
         }
       }
-      const enemy = new EnemyPlane(kind, candidate);
-      this.enemies.push(enemy);
-      this.scene.add(enemy.mesh);
+      this.addEnemy(kind, candidate);
       return true;
     }
     return false;
+  }
+
+  addEnemy(kind, position, heading = null) {
+    const enemy = new EnemyPlane(kind, position, this.difficulty);
+    if (heading !== null) {
+      enemy.mesh.rotation.y = heading;
+    }
+    // In an escort most of the attackers go for the transport rather than the player.
+    if (this.transport?.alive && this.mission?.type === "escort" && !enemy.isStatic && Math.random() < 0.6) {
+      enemy.target = this.transport;
+    }
+    this.enemies.push(enemy);
+    this.scene.add(enemy.mesh);
+    return enemy;
   }
 
   spawnRings() {
@@ -768,6 +1181,9 @@ export class Game {
     const position = this.player.mesh.position;
     this.rings = this.rings.filter((ring) => {
       if (this.state === GAME_STATES.FLYING && ring.passedBy(position)) {
+        if (ring.race && this.mission?.type === "race") {
+          this.mission.passed += 1;
+        }
         this.awardTrick("ring");
         this.audio.playRing();
         this.effects.explosion(ring.mesh.position, 0xffd257);
@@ -785,13 +1201,16 @@ export class Game {
     const forward = player.getShotDirection();
     let best = null;
     let bestAngle = TRACK_CONE;
+    // Fog shortens how far the seeker can see.
+    const fog = THREE.MathUtils.clamp((this.atmosphere.weather.state.fog - 1) / 4.5, 0, 1);
+    const lockRange = MISSILE_CONFIG.lockRange * (1 - 0.45 * fog);
     for (const enemy of this.enemies) {
       if (!enemy.alive) {
         continue;
       }
       const offset = enemy.mesh.position.clone().sub(player.mesh.position);
       const distance = offset.length();
-      if (distance > MISSILE_CONFIG.lockRange) {
+      if (distance > lockRange) {
         continue;
       }
       const angle = Math.acos(THREE.MathUtils.clamp(offset.dot(forward) / distance, -1, 1));
@@ -892,6 +1311,11 @@ export class Game {
   }
 
   damageEnemy(enemy, amount) {
+    if (enemy.armored) {
+      // Rounds spark off the engine armour until the guns are gone.
+      this.effects.flash(enemy.mesh.position, 0xbfe4ff, 300, 0.05);
+      return;
+    }
     enemy.health -= amount;
     this.hud.hitMarker();
     if (enemy.health > 0) {
@@ -900,8 +1324,17 @@ export class Game {
       return;
     }
     enemy.alive = false;
-    this.score += enemy.config.score;
-    this.effects.explosion(enemy.mesh.position, 0xff9357, enemy.kind === "ace" || enemy.kind === "turret");
+    const points = this.scaled(enemy.config.score);
+    this.score += points;
+    const large = ["ace", "turret", "ship", "bossGun", "bossEngine"].includes(enemy.kind);
+    this.effects.explosion(enemy.mesh.position, 0xff9357, large);
+    if (enemy.kind === "ship") {
+      this.effects.splash(enemy.mesh.position.clone());
+    }
+    if (enemy.kind.startsWith("boss")) {
+      this.hud.showToast(enemy.kind === "bossGun" ? "GUN DOWN!" : "ENGINE DOWN!", points, 1);
+      this.shake = Math.max(this.shake, 0.6);
+    }
     this.audio.playKill(enemy.mesh.position);
   }
 
@@ -909,7 +1342,8 @@ export class Game {
     const player = this.player;
     const engaged = this.state === GAME_STATES.FLYING;
     this.enemies = this.enemies.filter((enemy) => {
-      const shot = enemy.update(delta, player, this.world);
+      const target = enemy.target?.alive ? enemy.target : player;
+      const shot = enemy.update(delta, target, this.world);
       if (shot && engaged) {
         const muzzle = enemy.getMuzzlePosition();
         const projectile = new Projectile(muzzle, shot, {
@@ -947,7 +1381,7 @@ export class Game {
         this.audio.playExplosion(enemy.mesh.position);
       }
       // Anything the player has left far behind rejoins the fight from the queue instead of chasing forever.
-      const lost = distance > (enemy.isStatic ? 1400 : 650);
+      const lost = !enemy.persistent && distance > (enemy.isStatic ? 1400 : 650);
       if (lost && enemy.alive && enemy.countsForWave) {
         this.waveQueue.push(enemy.kind);
       }
@@ -970,6 +1404,10 @@ export class Game {
         if (this.state === GAME_STATES.FLYING && projectile.mesh.position.distanceTo(position) < player.radius + 0.6) {
           projectile.alive = false;
           this.damagePlayer(1);
+        } else if (this.transport?.alive && projectile.mesh.position.distanceTo(this.transport.mesh.position) < this.transport.radius) {
+          projectile.alive = false;
+          this.transport.health -= 1;
+          this.effects.smoke(projectile.mesh.position, false);
         }
         continue;
       }
@@ -987,6 +1425,14 @@ export class Game {
 
     for (const enemy of this.enemies) {
       if (!enemy.alive) {
+        continue;
+      }
+
+      if (this.transport?.alive && !enemy.isStatic && enemy.mesh.position.distanceTo(this.transport.mesh.position) < enemy.radius + this.transport.radius) {
+        enemy.alive = false;
+        this.effects.explosion(enemy.mesh.position, 0xff5b5b);
+        this.audio.playExplosion(enemy.mesh.position);
+        this.transport.health -= 2;
         continue;
       }
 
@@ -1028,7 +1474,8 @@ export class Game {
     if (player.state === GAME_STATES.LANDING) {
       return;
     }
-    if (!this.world.collide(player.mesh.position, player.radius, PLAYER_CONFIG.collisionVerticalRadius)) {
+    const rammedBoss = this.boss && this.state === GAME_STATES.FLYING && this.boss.contains(player.mesh.position);
+    if (!rammedBoss && !this.world.collide(player.mesh.position, player.radius, PLAYER_CONFIG.collisionVerticalRadius)) {
       return;
     }
 
@@ -1067,7 +1514,7 @@ export class Game {
     player.mesh.rotation.set(0, player.mesh.rotation.y, 0);
     player.stunt = null;
     player.crashed = false;
-    player.health = PLAYER_CONFIG.maxHealth;
+    player.health = player.maxHealth;
     player.state = GAME_STATES.FLYING;
     player.velocity.copy(player.getShotDirection()).multiplyScalar(PLAYER_CONFIG.maxFlySpeed * 0.8);
     this.state = GAME_STATES.FLYING;
@@ -1103,6 +1550,10 @@ export class Game {
     }
     this.submitResult = null;
     if (this.score > 0) {
+      const before = this.career;
+      this.career += this.score;
+      store("career", this.career);
+      this.unlockedNow = AIRCRAFT.filter((plane) => plane.unlock > before && plane.unlock <= this.career).map((plane) => plane.name);
       this.leaderboard.submit({ score: this.score, wave: this.wave, seed: WORLD_SEED }).then((result) => {
         this.submitResult = result;
         if (this.state === GAME_STATES.GAME_OVER && this.deathTimer <= 0) {
@@ -1199,6 +1650,84 @@ export class Game {
       this.smokeTimer = player.health <= 1 ? 0.04 : 0.08;
       this.effects.smoke(player.mesh.localToWorld(new THREE.Vector3(0, 0.6, 2.5)), player.health <= 1);
     }
+  }
+
+  lightningRisk() {
+    const player = this.player;
+    return this.atmosphere.weather.state.storm > 0.6 && player.mesh.position.y - player.groundLevel > LIGHTNING_HEIGHT && this.weatherFlies();
+  }
+
+  weatherFlies() {
+    return this.mode === "combat" || this.settings.weatherFlight;
+  }
+
+  // Wind drifts the plane, rain and storms shake it, and high flight in a storm draws lightning.
+  applyWeather(delta) {
+    if (!this.weatherFlies()) {
+      return;
+    }
+    const player = this.player;
+    const weather = this.atmosphere.weather;
+    const { rain, storm } = weather.state;
+    const position = player.mesh.position;
+    position.x += weather.wind.x * 1.6 * delta;
+    position.z += weather.wind.y * 1.6 * delta;
+
+    const rough = Math.min(1, storm + rain * 0.35 + this.atmosphere.inCloud * 0.3);
+    const gust = this.gust;
+    gust.timer -= delta;
+    if (gust.timer <= 0) {
+      gust.timer = THREE.MathUtils.randFloat(0.25, 0.6);
+      gust.rollTarget = THREE.MathUtils.randFloatSpread(2);
+      gust.liftTarget = THREE.MathUtils.randFloatSpread(2);
+    }
+    gust.roll = THREE.MathUtils.damp(gust.roll, gust.rollTarget, 4, delta);
+    gust.lift = THREE.MathUtils.damp(gust.lift, gust.liftTarget, 4, delta);
+    if (rough > 0.05 && !player.stunt) {
+      player.mesh.rotation.z += gust.roll * rough * 1.4 * delta;
+      position.y += gust.lift * rough * 7 * delta;
+      this.shake = Math.max(this.shake, rough * 0.12);
+    }
+
+    if (this.lightningRisk()) {
+      this.lightningTimer -= delta;
+      if (this.lightningTimer <= 0) {
+        this.lightningTimer = THREE.MathUtils.randFloat(12, 24);
+        weather.strike(this.camera.position, position);
+        this.effects.flash(position, 0xd8e6ff, 20000, 0.25);
+        this.hud.showBanner("LIGHTNING STRIKE!", `Stay below ${LIGHTNING_HEIGHT} m in a storm`);
+        this.damagePlayer(1);
+      }
+    }
+  }
+
+  objectiveState() {
+    const mission = this.mission;
+    if (!mission || this.state === GAME_STATES.GAME_OVER) {
+      return null;
+    }
+    const clock = mission.timer !== null ? ` - ${Math.max(0, Math.ceil(mission.timer))}s` : "";
+    if (mission.type === "strike" || mission.type === "antiship") {
+      const left = mission.targets.filter((target) => target.alive).length;
+      return { title: mission.title, detail: `${left} of ${mission.targets.length} targets left${clock}` };
+    }
+    if (mission.type === "race") {
+      return { title: mission.title, detail: `Rings ${mission.passed}/${RACE_RINGS}${clock}` };
+    }
+    if (mission.type === "escort" && this.transport) {
+      const transport = this.transport;
+      return {
+        title: mission.title,
+        detail: `Route ${Math.round(transport.progress * 100)}% - transport hull ${Math.max(0, transport.health)}/${transport.maxHealth}`,
+        ratio: Math.max(0, transport.health) / transport.maxHealth,
+      };
+    }
+    if (mission.type === "boss" && this.boss) {
+      const health = this.boss.parts.reduce((sum, part) => sum + (part.alive ? Math.max(0, part.health) : 0), 0);
+      const phase = { guns: "Destroy the guns - engines are armoured", engines: "Engines exposed - take them out", falling: "Going down!" }[this.boss.phase];
+      return { title: mission.title, detail: phase, ratio: health / mission.maxHealth };
+    }
+    return null;
   }
 
   // Three.js never frees GPU buffers on its own, so every mesh we drop has to
@@ -1397,6 +1926,9 @@ export class Game {
       if (this.restartHold > 0) {
         return "HOLD R TO RESTART";
       }
+      if (this.lightningRisk()) {
+        return "LIGHTNING - FLY LOWER";
+      }
       return player.boosting ? "AFTERBURNER" : player.braking ? "AIR BRAKE" : "";
     }
     return "";
@@ -1460,10 +1992,17 @@ export class Game {
       }
     }
     for (const ring of this.rings) {
-      const point = this.radarPoint(ring.mesh.position, "ring");
+      const point = this.radarPoint(ring.mesh.position, ring.race ? "raceRing" : "ring");
       if (point) {
         contacts.push(point);
       }
+    }
+    if (this.mission?.site && this.mission.targets.some((target) => target.alive)) {
+      contacts.push(this.radarPoint(this.mission.site, "goal", true));
+    }
+    if (this.transport) {
+      contacts.push(this.radarPoint(this.transport.mesh.position, "ally", true));
+      contacts.push(this.radarPoint(this.transport.destination, "goal", true));
     }
 
     this.hud.update({
@@ -1472,11 +2011,15 @@ export class Game {
       speed: player.speed,
       altitude: player.mesh.position.y - this.groundAt(player.mesh.position.x, player.mesh.position.z),
       health: player.health,
+      maxHealth: player.maxHealth,
       score: this.score,
       best: Math.max(this.best, this.score),
-      wave: this.mode === "free" ? "Free flight" : this.wave === 0 ? "-" : this.waveActive ? `${this.wave}` : `${this.wave} (cleared)`,
+      wave: this.mode === "free" ? "Free flight" : this.wave === 0 ? "-" : this.waveActive ? `${this.wave}${this.mission ? ` (${this.mission.type === "boss" ? "boss" : "mission"})` : ""}` : `${this.wave} (cleared)`,
       missiles: player.missiles,
+      maxMissiles: player.maxMissiles,
       boost: player.boost,
+      throttle: player.throttle,
+      objective: this.objectiveState(),
       combo: this.combo,
       comboRatio: this.combo > 0 ? this.comboTimer / STUNT_CONFIG.comboWindow : 0,
       radarContacts: contacts,

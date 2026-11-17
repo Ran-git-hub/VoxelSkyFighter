@@ -1,4 +1,5 @@
-import { GAME_STATES, PLAYER_CONFIG } from "../game/constants.js";
+import { GAME_STATES } from "../game/constants.js";
+import { STAT_RANGES } from "../game/Aircraft.js";
 
 const HEART_PIXELS = [
   ".oo...oo.",
@@ -39,6 +40,7 @@ export class Hud {
             <div class="line"><strong>Left Click / Space</strong> Guns</div>
             <div class="line"><strong>Right Click / F</strong> Missile (needs lock)</div>
             <div class="line"><strong>Shift</strong> Throttle / Afterburner</div>
+            <div class="line"><strong>Wheel / T / G</strong> Cruise throttle</div>
             <div class="line"><strong>B</strong> Air Brake</div>
             <div class="line"><strong>Z / C</strong> Barrel Roll <strong>X</strong> Loop</div>
             <div class="line"><strong>P</strong> Autoland On/Off</div>
@@ -51,6 +53,7 @@ export class Hud {
           <div class="line">Speed: <strong id="stat-speed">0</strong> Alt: <strong id="stat-altitude">0</strong></div>
           <div class="line">Missiles: <strong id="stat-missiles"></strong></div>
           <div class="line meter-line">Boost <span class="meter"><span class="meter-fill" id="boost-fill"></span></span></div>
+          <div class="line meter-line">Thr&nbsp; <span class="meter"><span class="meter-fill throttle-fill" id="throttle-fill"></span></span> <span id="throttle-value"></span></div>
           <div class="line"><strong id="stat-state">READY</strong> <span id="stat-takeoff"></span></div>
         </div>
         <div class="settings-panel" id="settings-panel">
@@ -61,16 +64,10 @@ export class Hud {
             <button class="settings-tab" type="button" data-tab="audio">Audio</button>
           </div>
           <div class="settings-page" data-page="game">
-            <select class="mc-button" data-setting="plane" aria-label="Plane">
-              <option value="standard">Plane: Standard</option>
-              <option value="mario">Plane: Super Mario</option>
-              <option value="f16">Plane: F-16 Style</option>
-              <option value="airshow">Plane: Air Show</option>
-              <option value="brickstorm">Plane: Brick Storm</option>
-              <option value="brickbiplane">Plane: Brick Biplane</option>
-              <option value="brickairliner">Plane: Brick Airliner</option>
-              <option value="brickseaplane">Plane: Brick Seaplane</option>
-              <option value="brickjet">Plane: Brick Jet</option>
+            <select class="mc-button" data-setting="difficulty" aria-label="Difficulty">
+              <option value="easy">Difficulty: Easy</option>
+              <option value="normal">Difficulty: Normal</option>
+              <option value="hard">Difficulty: Hard</option>
             </select>
             <select class="mc-button" data-setting="time" aria-label="Time of day">
               <option value="dawn">Time: Dawn</option>
@@ -87,6 +84,7 @@ export class Hud {
               <option value="storm">Weather: Storm</option>
               <option value="fog">Weather: Fog</option>
             </select>
+            <button class="mc-button" type="button" data-toggle="weatherFlight" data-label="Free Flight Weather"></button>
           </div>
           <div class="settings-page hidden" data-page="graphics">
             <select class="mc-button" data-setting="quality" aria-label="Graphics quality">
@@ -130,11 +128,16 @@ export class Hud {
           </div>
         </div>
         <div class="status-bar">
-          <div class="hearts" id="hearts">${heartMarkup().repeat(PLAYER_CONFIG.maxHealth)}</div>
+          <div class="hearts" id="hearts"></div>
           <div class="xp">
             <div class="xp-level hidden" id="combo-value"></div>
             <div class="xp-bar"><div class="xp-fill" id="combo-fill"></div></div>
           </div>
+        </div>
+        <div class="objective hidden" id="objective">
+          <div class="objective-title" id="objective-title"></div>
+          <div class="objective-detail" id="objective-detail"></div>
+          <div class="boss-track hidden" id="boss-track"><div class="boss-fill" id="boss-fill"></div></div>
         </div>
         <div class="toasts" id="toasts"></div>
         <div class="banner hidden" id="banner"></div>
@@ -161,7 +164,15 @@ export class Hud {
     this.missilesEl = find("#stat-missiles");
     this.boostFillEl = find("#boost-fill");
     this.takeoffEl = find("#stat-takeoff");
-    this.heartEls = [...this.root.querySelectorAll(".heart")];
+    this.heartsEl = find("#hearts");
+    this.heartEls = [];
+    this.throttleFillEl = find("#throttle-fill");
+    this.throttleValueEl = find("#throttle-value");
+    this.objectiveEl = find("#objective");
+    this.objectiveTitleEl = find("#objective-title");
+    this.objectiveDetailEl = find("#objective-detail");
+    this.bossTrackEl = find("#boss-track");
+    this.bossFillEl = find("#boss-fill");
     this.overlayEl = find("#overlay");
     this.toastsEl = find("#toasts");
     this.bannerEl = find("#banner");
@@ -307,11 +318,15 @@ export class Hud {
     speed,
     altitude,
     health,
+    maxHealth,
     score,
     best,
     wave,
     missiles,
+    maxMissiles,
     boost,
+    throttle,
+    objective,
     combo = 0,
     comboRatio = 0,
     radarContacts = [],
@@ -330,12 +345,29 @@ export class Hud {
     this.scoreEl.textContent = score.toString();
     this.bestEl.textContent = best.toString();
     this.waveEl.textContent = wave;
-    if (missiles !== this.lastMissiles) {
+    if (missiles !== this.lastMissiles || maxMissiles !== this.lastMaxMissiles) {
       this.lastMissiles = missiles;
-      this.missilesEl.textContent = "▮".repeat(missiles) + "▯".repeat(Math.max(0, PLAYER_CONFIG.maxMissiles - missiles));
+      this.lastMaxMissiles = maxMissiles;
+      this.missilesEl.textContent = "▮".repeat(missiles) + "▯".repeat(Math.max(0, maxMissiles - missiles));
     }
     this.boostFillEl.style.width = `${boost * 100}%`;
+    this.throttleFillEl.style.width = `${throttle * 100}%`;
+    this.throttleValueEl.textContent = `${Math.round(throttle * 100)}%`;
+    if (this.heartEls.length !== maxHealth) {
+      this.heartsEl.innerHTML = heartMarkup().repeat(maxHealth);
+      this.heartEls = [...this.heartsEl.querySelectorAll(".heart")];
+    }
     this.heartEls.forEach((heart, index) => heart.classList.toggle("empty", index >= health));
+
+    this.objectiveEl.classList.toggle("hidden", !objective);
+    if (objective) {
+      this.objectiveTitleEl.textContent = objective.title;
+      this.objectiveDetailEl.textContent = objective.detail;
+      this.bossTrackEl.classList.toggle("hidden", objective.ratio === undefined);
+      if (objective.ratio !== undefined) {
+        this.bossFillEl.style.width = `${Math.max(0, Math.min(1, objective.ratio)) * 100}%`;
+      }
+    }
 
     this.comboValueEl.classList.toggle("hidden", combo === 0);
     this.comboValueEl.textContent = `x${combo}`;
@@ -421,7 +453,34 @@ export class Hud {
     }
   }
 
-  setOverlay(state, { score = 0, best = 0, wave = 0, paused = false, seed = 0, climate = "", mode = "combat", board = null, result = null } = {}) {
+  hangarMarkup(hangar) {
+    const plane = hangar.plane;
+    const bar = (label, key, value) => {
+      const [low, high] = STAT_RANGES[key];
+      const ratio = Math.max(0.06, Math.min(1, (value - low) / (high - low)));
+      return `<div class="stat-row"><span>${label}</span><span class="stat-bar"><span style="width:${ratio * 100}%"></span></span></div>`;
+    };
+    const note = plane.unlocked
+      ? plane.id === hangar.flying
+        ? "Selected"
+        : ""
+      : `Locked - needs ${plane.unlock.toLocaleString("en-US")} career points`;
+    return `
+      <div class="hangar">
+        <button class="mini-button hangar-arrow" type="button" data-action="plane-prev" aria-label="Previous plane">&lt;</button>
+        <div class="hangar-card${plane.unlocked ? "" : " locked"}">
+          <div class="hangar-name">${plane.name} <span class="dim">${hangar.index + 1}/${hangar.count}</span></div>
+          ${bar("Speed", "speed", plane.speed)}
+          ${bar("Turn", "turn", plane.turn)}
+          ${bar("Armor", "armor", plane.armor)}
+          ${bar("Missiles", "missiles", plane.missiles)}
+          <div class="hangar-note">${note}</div>
+        </div>
+        <button class="mini-button hangar-arrow" type="button" data-action="plane-next" aria-label="Next plane">&gt;</button>
+      </div>`;
+  }
+
+  setOverlay(state, { score = 0, best = 0, wave = 0, paused = false, seed = 0, climate = "", mode = "combat", board = null, result = null, hangar = null, career = 0, difficulty = "", unlocked = [] } = {}) {
     this.settingsEl.classList.toggle("hidden", !(paused || state === GAME_STATES.START || state === GAME_STATES.GAME_OVER));
     if (state === GAME_STATES.START) {
       this.overlayEl.className = "overlay overlay-title";
@@ -441,8 +500,9 @@ export class Hud {
             <button class="mini-button" type="button" data-action="random-seed">Random</button>
             <span class="climate">${climate}</span>
           </div>
+          ${hangar ? this.hangarMarkup(hangar) : ""}
           ${this.boardMarkup(board)}
-          <p class="hint">Best score: <strong>${best}</strong> &middot; <strong>H</strong> controls &middot; <strong>O</strong> photo mode</p>
+          <p class="hint">Best score: <strong>${best}</strong> &middot; Career: <strong>${career.toLocaleString("en-US")}</strong> &middot; ${difficulty} &middot; <strong>H</strong> controls &middot; <strong>O</strong> photo mode</p>
         </div>
       `;
       return;
@@ -464,6 +524,7 @@ export class Hud {
           <h2>You Died!</h2>
           <p>Score: <strong>${score}</strong> &middot; Wave <strong>${wave}</strong></p>
           <p class="verdict">${verdict}</p>
+          ${unlocked.map((name) => `<p class="unlock">UNLOCKED: ${name}!</p>`).join("")}
           ${this.boardMarkup(board)}
           <div class="press-key">Press <strong>R</strong> to respawn</div>
         </div>

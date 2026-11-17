@@ -106,6 +106,65 @@ const MODELS = {
     ],
     glows: [[[0.6, 0.6, 0.6], [0, -6.8, 0], 0xff8a2a]],
   },
+  truck: {
+    parts: [
+      [[3, 0.6, 7.6], [0, 1.1, 0], 0x2f3a24],
+      [[2.8, 2, 2.2], [0, 2.4, 2.6], 0x55663a],
+      [[2.4, 0.8, 0.3], [0, 2.9, 3.75], 0x7ad7f0],
+      [[2.9, 1.4, 4.6], [0, 2.1, -1.2], 0x6b5a3a],
+      [[3, 0.4, 4.8], [0, 2.95, -1.2], 0x4a3e28],
+      [[0.5, 1.3, 1.3], [1.5, 0.65, 2.5], 0x1a1a1a, true],
+      [[0.5, 1.3, 1.3], [1.5, 0.65, -0.6], 0x1a1a1a, true],
+      [[0.5, 1.3, 1.3], [1.5, 0.65, -2.6], 0x1a1a1a, true],
+      [[0.8, 0.8, 0.8], [0, 3.8, 2.4], 0x2f3a24],
+    ],
+    glows: [
+      [[0.5, 0.4, 0.2], [-1, 1.8, 3.85], 0xfff2c0],
+      [[0.5, 0.4, 0.2], [1, 1.8, 3.85], 0xfff2c0],
+    ],
+  },
+  ship: {
+    parts: [
+      [[6, 2.4, 26], [0, 0.6, 0], 0x5d6670],
+      [[4, 2, 6], [0, 0.4, 15.5], 0x5d6670],
+      [[2, 1.6, 3], [0, 0.4, 19.5], 0x4a525a],
+      [[6.4, 0.6, 32], [0, -0.7, 1], 0x8f2a2a],
+      [[6.2, 0.3, 30], [0, 1.95, 1], 0x8a8f86],
+      [[4, 3, 7], [0, 3.6, -2], 0x7c858e],
+      [[3, 2, 4], [0, 6, -1.4], 0x9aa3ad],
+      [[1.2, 0.4, 3.8], [0, 7.2, -1.4], 0x2a2a2a],
+      [[1.2, 3.6, 1.2], [0, 7.6, -4.4], 0x3a3a3a],
+      [[3, 1.4, 3], [0, 2.8, 8], 0x6a737c],
+      [[0.5, 0.5, 4], [0.5, 3, 10.6], 0x1a1a1a, true],
+      [[3, 1.4, 3], [0, 2.8, -10], 0x6a737c],
+      [[0.5, 0.5, 4], [0.5, 3, -12.6], 0x1a1a1a, true],
+      [[0.8, 0.4, 24], [3.1, 2.2, 0], 0xd0d0d0, true],
+    ],
+    glows: [
+      [[0.5, 0.5, 0.5], [0, 9.6, -4.4], 0xff2a1a],
+      [[0.4, 0.4, 0.4], [3.2, 3, 4], 0x1aff4a],
+      [[0.4, 0.4, 0.4], [-3.2, 3, 4], 0xff2a1a],
+    ],
+  },
+  bossGun: {
+    parts: [
+      [[4, 1.4, 4], [0, 0, 0], 0x454b52],
+      [[3, 1.4, 3], [0, 1.2, 0.3], 0x6a3030],
+      [[0.5, 0.5, 4], [0.6, 1.2, -2.6], 0x1a1a1a, true],
+      [[0.8, 0.8, 0.6], [0.6, 1.2, -4.7], 0x7a7f86, true],
+    ],
+    glows: [[[0.5, 0.5, 0.5], [0, 2.1, 1], 0xff2a1a]],
+  },
+  bossEngine: {
+    parts: [
+      [[3.6, 3.6, 7], [0, 0, 0], 0x454b52],
+      [[4, 4, 1.2], [0, 0, 3.2], 0x6a3030],
+      [[1, 1, 1.4], [0, 0, -4], 0x2a2a2a],
+      [[0.6, 7, 0.6], [0, 0, -4.8], 0x8c5a1e],
+      [[2.6, 0.5, 2.6], [0, 2.2, 0], 0x5d6670],
+    ],
+    glows: [[[2.6, 2.6, 0.3], [0, 0, 3.9], 0x4aa8ff]],
+  },
 };
 
 function addGlow(group, size, position, color) {
@@ -115,9 +174,17 @@ function addGlow(group, size, position, color) {
 }
 
 const scratch = new THREE.Vector3();
+const MUZZLES = {
+  turret: new THREE.Vector3(0, 4.4, -5),
+  bossGun: new THREE.Vector3(0, 1.2, -4.5),
+  ship: new THREE.Vector3(0, 6, -1),
+  default: new THREE.Vector3(0, 0, 4.5),
+};
+const AIMS = new Set(["turret", "bossGun"]);
 
 export class EnemyPlane {
-  constructor(kind, spawnPosition) {
+  // tuning comes from the difficulty: fire scales the time between bursts, spread blurs the aim (radians).
+  constructor(kind, spawnPosition, { fire = 1, spread = 0 } = {}) {
     this.kind = kind;
     this.config = ENEMY_KINDS[kind];
     this.mesh = new THREE.Group();
@@ -128,14 +195,21 @@ export class EnemyPlane {
     this.alive = true;
     this.nearMissed = false;
     this.previousDistance = null;
-    this.radius = ENEMY_CONFIG.collisionRadius * this.config.scale * (kind === "balloon" || kind === "turret" ? 1.5 : 1);
-    this.fireTimer = this.config.fireInterval * (0.3 + Math.random() * 0.5);
+    this.radius = this.config.radius ?? ENEMY_CONFIG.collisionRadius * this.config.scale * (kind === "balloon" || kind === "turret" ? 1.5 : 1);
+    this.fireScale = fire;
+    this.spread = spread;
+    this.fireTimer = this.config.fireInterval * fire * (0.3 + Math.random() * 0.5);
     this.burstLeft = 0;
     this.burstTimer = 0;
     this.breakTimer = 0;
     this.weave = Math.random() * Math.PI * 2;
-    this.isStatic = this.config.speed === 0;
+    // Ground and mounted units never fly, so terrain checks and the lead pip treat them as fixed.
+    this.isStatic = this.config.speed === 0 || Boolean(this.config.ground);
     this.countsForWave = kind !== "balloon";
+    this.target = null;
+    this.persistent = false;
+    this.armored = false;
+    this.turnSign = Math.random() < 0.5 ? -1 : 1;
     const model = MODELS[kind];
     for (const [size, [x, y, z], color, mirrored] of model.parts) {
       addVoxel(this.mesh, size, [x, y, z], color);
@@ -143,9 +217,10 @@ export class EnemyPlane {
         addVoxel(this.mesh, size, [-x, y, z], color);
       }
     }
-    for (const [size, position, color] of model.glows) {
+    this.glows = model.glows.map(([size, position, color]) => {
       addGlow(this.mesh, size, position, color);
-    }
+      return this.mesh.children[this.mesh.children.length - 1];
+    });
     // Hostile aircraft carry red lamps on both wingtips, so they read as threats at dusk.
     if (model.lights) {
       const [x, y, z] = model.lights;
@@ -156,8 +231,9 @@ export class EnemyPlane {
   }
 
   // Returns a shot direction when the enemy fires this frame, otherwise null.
-  update(delta, player, world) {
-    const toPlayer = scratch.copy(player.mesh.position).sub(this.mesh.position);
+  // The target is the player, or anything else with a mesh and a velocity (the escorted transport).
+  update(delta, target, world) {
+    const toPlayer = scratch.copy(target.mesh.position).sub(this.mesh.position);
     const distance = toPlayer.length();
     this.weave += delta;
 
@@ -167,12 +243,39 @@ export class EnemyPlane {
       return null;
     }
 
-    if (this.kind === "turret") {
+    if (AIMS.has(this.kind)) {
       this.mesh.rotation.y = Math.atan2(-toPlayer.x, -toPlayer.z);
+    } else if (this.config.ground) {
+      if (this.config.speed > 0) {
+        this.drive(delta, world);
+      }
     } else {
-      this.fly(delta, toPlayer, distance, player, world);
+      this.fly(delta, toPlayer, distance, target, world);
     }
-    return this.shoot(delta, distance, player);
+    return this.shoot(delta, distance, target);
+  }
+
+  // Trucks keep to dry, gentle ground and ships to open water; either turns on the spot when blocked.
+  drive(delta, world) {
+    const position = this.mesh.position;
+    const heading = this.mesh.rotation.y;
+    const dx = Math.sin(heading);
+    const dz = Math.cos(heading);
+    const ship = this.kind === "ship";
+    const probe = ship ? 26 : 7;
+    const ahead = world.heightAt(position.x + dx * probe, position.z + dz * probe);
+    const blocked = ship
+      ? ahead >= world.seaLevel - 2
+      : ahead <= world.seaLevel || Math.abs(ahead - world.heightAt(position.x, position.z)) > 3;
+    if (blocked) {
+      this.mesh.rotation.y += this.turnSign * 0.9 * delta;
+      this.velocity.set(0, 0, 0);
+      return;
+    }
+    position.x += dx * this.config.speed * delta;
+    position.z += dz * this.config.speed * delta;
+    position.y = ship ? world.seaLevel : world.heightAt(position.x, position.z);
+    this.velocity.set(dx, 0, dz).multiplyScalar(this.config.speed);
   }
 
   fly(delta, toPlayer, distance, player, world) {
@@ -243,7 +346,7 @@ export class EnemyPlane {
         return null;
       }
     }
-    this.fireTimer = this.config.fireInterval;
+    this.fireTimer = this.config.fireInterval * this.fireScale;
     this.burstLeft = this.config.burst - 1;
     this.burstTimer = 0.14;
     return aim;
@@ -251,11 +354,15 @@ export class EnemyPlane {
 
   aimAt(player, distance) {
     const lead = distance / ENEMY_CONFIG.bulletSpeed;
-    return player.mesh.position
+    const aim = player.mesh.position
       .clone()
       .addScaledVector(player.velocity, lead * 0.85)
       .sub(this.getMuzzlePosition())
       .normalize();
+    aim.x += THREE.MathUtils.randFloatSpread(this.spread * 2);
+    aim.y += THREE.MathUtils.randFloatSpread(this.spread * 2);
+    aim.z += THREE.MathUtils.randFloatSpread(this.spread * 2);
+    return aim.normalize();
   }
 
   getExhaustPosition() {
@@ -263,7 +370,7 @@ export class EnemyPlane {
   }
 
   getMuzzlePosition() {
-    const local = this.kind === "turret" ? new THREE.Vector3(0, 4.4, -5) : new THREE.Vector3(0, 0, 4.5);
-    return this.mesh.localToWorld(local);
+    const local = MUZZLES[this.kind] ?? MUZZLES.default;
+    return this.mesh.localToWorld(local.clone());
   }
 }

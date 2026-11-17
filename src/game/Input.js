@@ -30,6 +30,8 @@ const GAME_KEYS = new Set([
   "KeyH",
   "KeyO",
   "KeyK",
+  "KeyT",
+  "KeyG",
 ]);
 
 // Pointer-lock deltas are in CSS pixels; this many pixels pushes the virtual stick to full deflection.
@@ -250,6 +252,14 @@ export class Input {
 
   get pitchDown() {
     return this.isPressed("KeyS") || this.isPressed("ArrowUp");
+  }
+
+  get throttleUp() {
+    return this.isPressed("KeyT");
+  }
+
+  get throttleDown() {
+    return this.isPressed("KeyG");
   }
 
   get rudderLeft() {

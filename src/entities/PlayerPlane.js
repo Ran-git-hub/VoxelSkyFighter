@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { GAME_STATES, PLAYER_CONFIG, STUNT_CONFIG, WORLD_CONFIG } from "../game/constants.js";
 import { blockBoxGeometry, voxelMaterial } from "../world/BlockTextures.js";
 import { buildBrickPlane, isBrickSkin } from "./BrickPlanes.js";
+import { aircraftById } from "../game/Aircraft.js";
 
 function addVoxel(group, size, position, color) {
   const cube = new THREE.Mesh(blockBoxGeometry(size), voxelMaterial(color));
@@ -40,7 +41,6 @@ export class PlayerPlane {
     this.up = new THREE.Vector3(0, 1, 0);
     this.right = new THREE.Vector3(1, 0, 0);
     this.state = GAME_STATES.START;
-    this.health = PLAYER_CONFIG.maxHealth;
     this.fireTimer = 0;
     this.altitude = 0;
     this.speed = 0;
@@ -56,6 +56,8 @@ export class PlayerPlane {
     this.justCompletedStunt = null;
     this.justTouchedDown = false;
     this.skin = "standard";
+    this.stats = aircraftById(this.skin);
+    this.armorBonus = 0;
     this.buildModel();
     this.reset();
   }
@@ -344,7 +346,16 @@ export class PlayerPlane {
 
   setSkin(skin) {
     this.skin = skin;
+    this.stats = aircraftById(skin);
     this.buildModel();
+  }
+
+  get maxHealth() {
+    return Math.max(2, this.stats.armor + this.armorBonus);
+  }
+
+  get maxMissiles() {
+    return this.stats.missiles;
   }
 
   reset() {
@@ -353,8 +364,9 @@ export class PlayerPlane {
     this.mesh.visible = true;
     this.velocity.set(0, 0, 0);
     this.state = GAME_STATES.START;
-    this.health = PLAYER_CONFIG.maxHealth;
-    this.missiles = PLAYER_CONFIG.maxMissiles;
+    this.health = this.maxHealth;
+    this.missiles = this.maxMissiles;
+    this.throttle = PLAYER_CONFIG.defaultThrottle;
     this.boost = 1;
     this.boosting = false;
     this.braking = false;
@@ -617,6 +629,8 @@ export class PlayerPlane {
 
     this.boosting = Boolean(input.throttle) && this.boost > 0 && !input.brake;
     this.braking = Boolean(input.brake);
+    const lever = (input.throttleUp ? 1 : 0) - (input.throttleDown ? 1 : 0);
+    this.throttle = THREE.MathUtils.clamp(this.throttle + lever * 0.6 * delta, 0, 1);
     this.boost = THREE.MathUtils.clamp(
       this.boost + (this.boosting ? -PLAYER_CONFIG.boostDrain : PLAYER_CONFIG.boostRegen) * delta,
       0,
@@ -624,7 +638,7 @@ export class PlayerPlane {
     );
 
     // A slower plane turns tighter, which is what makes the air brake worth using in a fight.
-    const agility = THREE.MathUtils.clamp(PLAYER_CONFIG.maxFlySpeed / Math.max(this.speed, 24), 0.7, 1.5);
+    const agility = THREE.MathUtils.clamp(PLAYER_CONFIG.maxFlySpeed / Math.max(this.speed, 24), 0.7, 1.5) * this.stats.turn;
     const yaw = -(turn * PLAYER_CONFIG.turnRateAir + rudder * PLAYER_CONFIG.turnRateAir * 0.45) * agility;
     const pitchTarget = THREE.MathUtils.clamp(-target.y * PLAYER_CONFIG.mousePitchStrength * 0.8 + keyPitch * 0.7, -1.1, 1.1);
     // Flare assist: slow and low over the strip, the nose will not drop past a survivable glide.
@@ -639,9 +653,9 @@ export class PlayerPlane {
           ? Math.max(pitchTarget, -0.25)
           : pitchTarget;
     const pitchStep = THREE.MathUtils.clamp(
-      (protectedPitchTarget - this.mesh.rotation.x) * 2.6,
-      -PLAYER_CONFIG.pitchRate,
-      PLAYER_CONFIG.pitchRate
+      (protectedPitchTarget - this.mesh.rotation.x) * 2.6 * this.stats.turn,
+      -PLAYER_CONFIG.pitchRate * this.stats.turn,
+      PLAYER_CONFIG.pitchRate * this.stats.turn
     );
     if (Math.abs(turn) > 0.45 || keyPitch !== 0 || Math.abs(target.y) > 0.45 || this.stunt) {
       this.maneuverTimer = 1.2;
@@ -656,11 +670,8 @@ export class PlayerPlane {
       : THREE.MathUtils.damp(this.mesh.rotation.z, -turn * 0.95 - rudder * 0.2, 5, delta);
 
     const forward = this.heading();
-    const base = this.boosting
-      ? PLAYER_CONFIG.boostSpeed
-      : this.braking
-        ? PLAYER_CONFIG.brakeSpeed
-        : PLAYER_CONFIG.maxFlySpeed * 0.86;
+    const cruise = THREE.MathUtils.lerp(PLAYER_CONFIG.cruiseMinSpeed, PLAYER_CONFIG.cruiseMaxSpeed, this.throttle);
+    const base = (this.boosting ? PLAYER_CONFIG.boostSpeed : this.braking ? PLAYER_CONFIG.brakeSpeed : cruise) * this.stats.speed;
     // Trade height for speed: climbing bleeds it off, diving builds it up.
     const targetSpeed = base - forward.y * 16;
     const nextSpeed = THREE.MathUtils.damp(this.velocity.length(), targetSpeed, this.braking ? 1.8 : 1.3, delta);

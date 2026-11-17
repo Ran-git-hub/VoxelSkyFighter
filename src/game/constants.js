@@ -19,7 +19,6 @@ export const PLAYER_CONFIG = {
   minAltitude: 2,
   maxAltitude: 300,
   fireCooldown: 0.18,
-  maxHealth: 5,
   takeoffRotateSpeed: 3.2,
   takeoffCommitSpeed: 42,
   takeoffLiftOffAltitude: 12,
@@ -35,9 +34,11 @@ export const PLAYER_CONFIG = {
   landingRollBrake: 14,
   boostSpeed: 92,
   brakeSpeed: 30,
+  cruiseMinSpeed: 34,
+  cruiseMaxSpeed: 64,
+  defaultThrottle: 0.7,
   boostDrain: 0.3,
   boostRegen: 0.14,
-  maxMissiles: 4,
   manualLandingMaxSpeed: 58,
   manualLandingMaxSink: 22,
   landingRepairBonus: 400,
@@ -56,6 +57,10 @@ export const ENEMY_KINDS = {
   ace: { health: 4, speed: 82, turn: 1.5, score: 600, fireInterval: 1.5, burst: 3, range: 260, scale: 1.25 },
   turret: { health: 3, speed: 0, turn: 0, score: 300, fireInterval: 2.2, burst: 2, range: 300, scale: 1 },
   balloon: { health: 1, speed: 0, turn: 0, score: 75, fireInterval: 0, range: 0, scale: 1 },
+  truck: { health: 2, speed: 9, turn: 0, score: 150, fireInterval: 0, range: 0, scale: 1, ground: true, radius: 4 },
+  ship: { health: 10, speed: 6, turn: 0, score: 900, fireInterval: 2.4, burst: 3, range: 320, scale: 1, ground: true, radius: 11 },
+  bossGun: { health: 6, speed: 0, turn: 0, score: 500, fireInterval: 1.8, burst: 3, range: 380, scale: 1, ground: true, radius: 4 },
+  bossEngine: { health: 14, speed: 0, turn: 0, score: 1500, fireInterval: 0, range: 0, scale: 1, ground: true, radius: 5 },
 };
 
 export const MISSILE_CONFIG = {
