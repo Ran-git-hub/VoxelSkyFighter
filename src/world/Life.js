@@ -135,7 +135,18 @@ export class Life {
     });
   }
 
+  setEnabled(enabled) {
+    this.enabled = enabled;
+    this.birds.visible = enabled;
+    for (const item of [...this.boats, ...this.vehicles]) {
+      item.mesh.visible = enabled && (item.placed ?? true);
+    }
+  }
+
   update(delta, focus, effects) {
+    if (this.enabled === false) {
+      return;
+    }
     this.time += delta;
     this.updateBirds(delta, focus);
     this.updateBoats(delta, focus, effects);

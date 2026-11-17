@@ -5,6 +5,7 @@ import {
   RUNWAY,
   SEA_LEVEL,
   TREE_CELL,
+  WORLD_SEED,
   heightBlocksAt,
   landmarkInCell,
   treeBoxes,
@@ -82,7 +83,9 @@ export class VoxelWorld {
 
     const workerCount = THREE.MathUtils.clamp((navigator.hardwareConcurrency || 4) - 1, 1, 3);
     this.workers = Array.from({ length: workerCount }, () => {
-      const worker = new Worker(new URL("./chunkWorker.js", import.meta.url), { type: "module" });
+      const url = new URL("./chunkWorker.js", import.meta.url);
+      url.searchParams.set("seed", WORLD_SEED);
+      const worker = new Worker(url, { type: "module" });
       worker.busy = false;
       worker.onmessage = (event) => {
         worker.busy = false;

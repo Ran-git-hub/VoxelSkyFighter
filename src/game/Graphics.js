@@ -119,6 +119,7 @@ export class Graphics {
     this.slowTimer = 0;
     this.fastTimer = 0;
     this.stats = { calls: 0, triangles: 0 };
+    this.toggles = { godRays: true, reflections: true };
 
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -188,7 +189,7 @@ export class Graphics {
     this.quality = QUALITY_PRESETS[name];
     this.aoPass.enabled = this.quality.ao;
     this.bloomPass.enabled = this.quality.bloom;
-    this.rayPass.enabled = this.quality.rays;
+    this.rayPass.enabled = this.quality.rays && this.toggles.godRays;
     this.resolutionScale = 1;
 
     const shadows = this.quality.shadowMapSize > 0;
@@ -202,6 +203,13 @@ export class Graphics {
     }
     this.applySize();
     return this.quality;
+  }
+
+  setToggle(key, value) {
+    this.toggles[key] = value;
+    if (this.quality) {
+      this.rayPass.enabled = this.quality.rays && this.toggles.godRays;
+    }
   }
 
   setSize(width, height) {
@@ -295,7 +303,7 @@ export class Graphics {
     const camera = this.camera;
     const level = this.waterLevel;
     this.frustum.setFromProjectionMatrix(this.scratchMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
-    const active = this.quality.reflections && camera.position.y > level + 0.5 && this.waterInView?.(this.frustum);
+    const active = this.quality.reflections && this.toggles.reflections && camera.position.y > level + 0.5 && this.waterInView?.(this.frustum);
     waterUniforms.uReflectionMix.value = active ? 1 : 0;
     if (!active) {
       return;

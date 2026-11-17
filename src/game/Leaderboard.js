@@ -1,0 +1,136 @@
+const ENDPOINT = "/api/leaderboard";
+const PILOT_KEY = "vsf.pilot";
+const LOCAL_KEY = "vsf.localBoard";
+const LOCAL_SIZE = 10;
+
+const ADJECTIVES = [
+  "IRON", "SILVER", "CRIMSON", "SWIFT", "THUNDER", "SHADOW", "BLAZING", "ARCTIC", "NEON", "COBALT",
+  "GOLDEN", "ROGUE", "STORM", "LUCKY", "TURBO", "PIXEL", "SONIC", "SCARLET", "JADE", "ROCKET",
+];
+const NOUNS = [
+  "FALCON", "HAWK", "EAGLE", "VIPER", "COMET", "RAVEN", "MAVERICK", "PHOENIX", "GHOST", "ACE",
+  "BARON", "HORNET", "KESTREL", "COBRA", "SPARROW", "WOLF", "DRAGON", "OWL", "LANCER", "JET",
+];
+
+const pick = (list) => list[Math.floor(Math.random() * list.length)];
+
+export function randomPilotName() {
+  return `${pick(ADJECTIVES)} ${pick(NOUNS)} ${String(Math.floor(Math.random() * 100)).padStart(2, "0")}`;
+}
+
+function readJson(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJson(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Without storage the pilot simply gets a fresh identity next visit.
+  }
+}
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+// Global scores go to the serverless endpoint; when it is missing or unreachable the
+// board falls back to this browser's own scores so the game still has a table to show.
+export class Leaderboard {
+  constructor() {
+    this.pilot = readJson(PILOT_KEY, null);
+    if (!this.pilot?.id || !this.pilot?.name) {
+      this.pilot = { id: crypto.randomUUID(), name: randomPilotName() };
+      writeJson(PILOT_KEY, this.pilot);
+    }
+    this.online = null;
+    this.entries = [];
+    this.yourRank = null;
+    this.loading = false;
+    this.onChange = null;
+  }
+
+  rename() {
+    this.pilot.name = randomPilotName();
+    writeJson(PILOT_KEY, this.pilot);
+    this.changed();
+  }
+
+  changed() {
+    this.onChange?.();
+  }
+
+  async refresh() {
+    this.loading = true;
+    this.changed();
+    try {
+      const response = await fetch(`${ENDPOINT}?id=${encodeURIComponent(this.pilot.id)}`, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`status ${response.status}`);
+      }
+      const data = await response.json();
+      this.online = true;
+      this.entries = data.entries;
+      this.yourRank = data.you?.rank ?? null;
+    } catch {
+      this.useLocal();
+    }
+    this.loading = false;
+    this.changed();
+  }
+
+  useLocal() {
+    this.online = false;
+    const board = readJson(LOCAL_KEY, []);
+    this.entries = board.map((entry, index) => ({ ...entry, rank: index + 1, mine: entry.id === this.pilot.id }));
+    const mine = this.entries.find((entry) => entry.mine);
+    this.yourRank = mine ? mine.rank : null;
+  }
+
+  saveLocal({ score, wave, seed }) {
+    const board = readJson(LOCAL_KEY, []);
+    const existing = board.find((entry) => entry.id === this.pilot.id);
+    const improved = !existing || score > existing.score;
+    if (existing) {
+      existing.name = this.pilot.name;
+    }
+    if (improved) {
+      const entry = existing ?? { id: this.pilot.id };
+      Object.assign(entry, { name: this.pilot.name, score, wave, seed, date: today() });
+      if (!existing) {
+        board.push(entry);
+      }
+    }
+    board.sort((a, b) => b.score - a.score);
+    writeJson(LOCAL_KEY, board.slice(0, LOCAL_SIZE));
+    return improved;
+  }
+
+  // Returns { improved, rank } once the server (or the local fallback) has answered.
+  async submit({ score, wave, seed }) {
+    if (score <= 0) {
+      return { improved: false, rank: null };
+    }
+    const improvedLocally = this.saveLocal({ score, wave, seed });
+    try {
+      const response = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: this.pilot.id, name: this.pilot.name, score, wave, seed }),
+      });
+      if (!response.ok) {
+        throw new Error(`status ${response.status}`);
+      }
+      const result = await response.json();
+      await this.refresh();
+      return { improved: result.improved, rank: result.rank };
+    } catch {
+      this.useLocal();
+      this.changed();
+      return { improved: improvedLocally, rank: this.yourRank };
+    }
+  }
+}

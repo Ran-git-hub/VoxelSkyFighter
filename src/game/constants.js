@@ -12,16 +12,11 @@ export const PLAYER_CONFIG = {
   drag: 1.8,
   turnRateGround: 0.9,
   turnRateAir: 0.9,
-  rollRate: 2.8,
   pitchRate: 1.5,
-  yawRateMouse: 1.1,
-  minTakeoffSpeed: 38,
   maxTaxiSpeed: 72,
   maxFlySpeed: 64,
-  climbStrength: 16,
   gravity: 7,
   minAltitude: 2,
-  safeGroundAltitude: 3.2,
   maxAltitude: 300,
   fireCooldown: 0.18,
   maxHealth: 5,
@@ -35,15 +30,9 @@ export const PLAYER_CONFIG = {
   takeoffLiftBlendTime: 0.65,
   collisionRadius: 2.8,
   collisionVerticalRadius: 1.5,
-  mouseYawStrength: 2.2,
   mousePitchStrength: 1.4,
-  obstacleImpactSpeed: 18,
   landingApproachSpeed: 34,
-  landingTouchdownSpeed: 22,
-  landingDescentRate: 10,
   landingRollBrake: 14,
-  landingApproachAltitude: 26,
-  landingVectorTime: 1.6,
   boostSpeed: 92,
   brakeSpeed: 30,
   boostDrain: 0.3,
@@ -83,7 +72,6 @@ export const MISSILE_CONFIG = {
 export const WAVE_CONFIG = {
   intermission: 5,
   clearBonus: 500,
-  ringScore: 300,
   ringRadius: 11,
 };
 
@@ -112,6 +100,5 @@ export const STUNT_CONFIG = {
 
 export const WORLD_CONFIG = {
   runwayLength: 900,
-  runwayWidth: 28,
   runwayHalfWidth: 14,
 };

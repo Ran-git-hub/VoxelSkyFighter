@@ -19,7 +19,24 @@ Then open <http://localhost:8765/> and click to start.
 
 `serve.py` turns off browser caching, so after editing the code a page refresh picks up the change. Any static file server works too, but it may serve stale copies of the modules.
 
-Add `?debug` to the URL to show a debug panel with frame rate, draw calls and chunk counts, and to expose `window.__game` in the console.
+Add `?debug` to the URL to show a debug panel with frame rate, draw calls and chunk counts, and to expose `window.__game` in the console. `?debug&selftest` also fast-forwards through take-off, combat, a wave, autoland, a crash and free flight, and prints the results to the console (or call `__game.selfTest()`).
+
+`serve.py` also answers `/api/leaderboard` with an in-memory stand-in, so the leaderboard works locally; its scores vanish when the server stops.
+
+## Modes
+
+- **Start Mission**: fight wave after wave. When you go down, your score is sent to the leaderboard.
+- **Free Flight**: no enemies and no game over; crashing just puts you back in the air.
+- **World seed**: type a number on the title screen (or press Random) for a different world. The seed is also in the URL (`?seed=123`), so a world can be shared as a link.
+- **Photo mode**: press **O** in flight to freeze the action and fly a free camera; **K** saves a PNG.
+
+## Leaderboard
+
+Each browser gets a random arcade-style pilot name (it can be rerolled on the title screen). The board keeps every pilot's best score, with the wave reached, the world seed and the date, and shows the world top 10.
+
+Scores are stored by the serverless function in `api/leaderboard.js`, which needs an [Upstash Redis](https://vercel.com/marketplace/upstash) database connected to the Vercel project (it reads `KV_REST_API_URL` and `KV_REST_API_TOKEN`). Without one, or when offline, the game falls back to a board of this browser's own scores.
+
+Scores are reported by the browser, so the server only rejects implausible values; it cannot stop a determined cheat.
 
 ## Controls
 
@@ -36,6 +53,7 @@ Add `?debug` to the URL to show a debug panel with frame rate, draw calls and ch
 | Z / C | Barrel roll |
 | X | Loop |
 | P | Autoland on / off |
+| O | Photo mode (WASD move, Q/E down/up, wheel zoom, K save) |
 | H | Show / hide controls |
 | Esc | Pause |
 | Hold R | Restart |
@@ -48,14 +66,16 @@ On the runway, hold Shift to build speed, then press W to rotate. Landing slowly
 - **Combat**: waves that grow tougher (rammers, gunships, aces, ground turrets, hot-air balloons), guns, lock-on homing missiles, and bonus points for stunts and rings.
 - **Aircraft**: 9 to choose from, including 4 in a toy-brick style.
 - **Visuals**: dynamic day and night with moon phases; clear, cloudy, rain, thunderstorm and fog weather (with automatic changes); god rays, lens flare, rainbows and aurora; water reflections, cascaded shadows, ambient occlusion, bloom, and relief and highlights on block materials.
-- **Graphics quality**: low, medium, high and ultra presets, with resolution scaled automatically to hold the frame rate.
+- **Graphics quality**: low, medium, high and ultra presets, with resolution scaled automatically to hold the frame rate. God rays, water reflections, rain and lightning, ambient life and speed effects can each be switched off.
+- **Audio**: separate on/off switches and volume sliders for music and sound effects.
 
 ## Layout
 
 ```
 index.html          Entry page
 styles.css          UI styles
-serve.py            Local development server
+serve.py            Local development server (with a stand-in leaderboard API)
+api/leaderboard.js  Vercel serverless function for the global leaderboard
 src/
   main.js           Startup
   game/             Game loop, input, audio, post-processing, effects, constants

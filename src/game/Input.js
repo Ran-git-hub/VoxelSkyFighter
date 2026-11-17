@@ -28,6 +28,8 @@ const GAME_KEYS = new Set([
   "KeyP",
   "KeyR",
   "KeyH",
+  "KeyO",
+  "KeyK",
 ]);
 
 // Pointer-lock deltas are in CSS pixels; this many pixels pushes the virtual stick to full deflection.
@@ -48,6 +50,8 @@ export class Input {
     this.locked = false;
     this.everLocked = false;
     this.onLockChange = null;
+    // Raw mouse travel and wheel clicks since the last read, for the photo camera.
+    this.look = { x: 0, y: 0, wheel: 0 };
 
     this.onKeyDown = (event) => {
       if (event.target instanceof HTMLElement && event.target.matches("input, select, textarea")) {
@@ -70,6 +74,8 @@ export class Input {
     };
 
     this.onMouseMove = (event) => {
+      this.look.x += event.movementX;
+      this.look.y += event.movementY;
       if (!this.canFly) {
         return;
       }
@@ -100,6 +106,10 @@ export class Input {
     };
 
     this.onContextMenu = (event) => event.preventDefault();
+
+    this.onWheel = (event) => {
+      this.look.wheel += Math.sign(event.deltaY);
+    };
 
     this.onPointerLockChange = () => {
       this.locked = document.pointerLockElement === this.target;
@@ -133,6 +143,7 @@ export class Input {
     document.addEventListener("pointerlockerror", this.onLockError);
     this.target.addEventListener("mousedown", this.onMouseDown);
     this.target.addEventListener("contextmenu", this.onContextMenu);
+    this.target.addEventListener("wheel", this.onWheel, { passive: true });
   }
 
   detach() {
@@ -145,6 +156,15 @@ export class Input {
     document.removeEventListener("pointerlockerror", this.onLockError);
     this.target.removeEventListener("mousedown", this.onMouseDown);
     this.target.removeEventListener("contextmenu", this.onContextMenu);
+    this.target.removeEventListener("wheel", this.onWheel);
+  }
+
+  consumeLook() {
+    const look = { ...this.look };
+    this.look.x = 0;
+    this.look.y = 0;
+    this.look.wheel = 0;
+    return look;
   }
 
   requestLock() {

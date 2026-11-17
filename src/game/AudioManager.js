@@ -13,6 +13,17 @@ export class AudioManager {
     this.lastTrickCombo = 0;
     this.nextHeartbeat = 0;
     this.listenerPosition = { x: 0, y: 0, z: 0 };
+    this.levels = { music: 1, sfx: 1 };
+  }
+
+  // Settings arrive before the first click creates the context, so they are kept and applied on init.
+  setLevels({ music, musicVolume, sfx, sfxVolume }) {
+    this.levels = { music: music ? musicVolume : 0, sfx: sfx ? sfxVolume : 0 };
+    if (this.context) {
+      const now = this.context.currentTime;
+      this.musicLevel.gain.setTargetAtTime(this.levels.music, now, 0.05);
+      this.sfxLevel.gain.setTargetAtTime(this.levels.sfx, now, 0.05);
+    }
   }
 
   async ensureStarted() {
@@ -47,18 +58,25 @@ export class AudioManager {
     this.masterGain.gain.value = 0.55;
     this.masterGain.connect(compressor);
 
+    this.musicLevel = c.createGain();
+    this.musicLevel.gain.value = this.levels.music;
+    this.musicLevel.connect(this.masterGain);
+    this.sfxLevel = c.createGain();
+    this.sfxLevel.gain.value = this.levels.sfx;
+    this.sfxLevel.connect(this.masterGain);
+
     this.musicGain = c.createGain();
     this.musicGain.gain.value = 0.16;
-    this.musicGain.connect(this.masterGain);
+    this.musicGain.connect(this.musicLevel);
     this.music = new AmbientMusic(c, this.musicGain);
 
     this.engineGain = c.createGain();
     this.engineGain.gain.value = 0.4;
-    this.engineGain.connect(this.masterGain);
+    this.engineGain.connect(this.sfxLevel);
 
     this.effectsGain = c.createGain();
     this.effectsGain.gain.value = 0.5;
-    this.effectsGain.connect(this.masterGain);
+    this.effectsGain.connect(this.sfxLevel);
 
     const reverb = c.createConvolver();
     reverb.buffer = this.createImpulse();
@@ -66,7 +84,7 @@ export class AudioManager {
     reverbSend.gain.value = 0.22;
     this.effectsGain.connect(reverbSend);
     reverbSend.connect(reverb);
-    reverb.connect(this.masterGain);
+    reverb.connect(this.sfxLevel);
 
     this.buildEngine();
     this.buildEnemyDrone();

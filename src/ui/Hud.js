@@ -27,7 +27,7 @@ const POOL_CONTACTS = 24;
 const POOL_ARROWS = 6;
 
 export class Hud {
-  constructor(root, { settings, onSettingChange, onResume } = {}) {
+  constructor(root, { settings, onSettingChange, onResume, onAction } = {}) {
     this.root = root;
     this.root.innerHTML = `
       <div class="hud">
@@ -54,49 +54,71 @@ export class Hud {
           <div class="line"><strong id="stat-state">READY</strong> <span id="stat-takeoff"></span></div>
         </div>
         <div class="settings-panel" id="settings-panel">
-          <div class="settings-title">Settings</div>
-          <label class="sr-only" for="plane-style">Plane Style</label>
-          <select id="plane-style" class="mc-button" data-setting="plane">
-            <option value="standard">Plane: Standard</option>
-            <option value="mario">Plane: Super Mario</option>
-            <option value="f16">Plane: F-16 Style</option>
-            <option value="airshow">Plane: Air Show</option>
-            <option value="brickstorm">Plane: Brick Storm</option>
-            <option value="brickbiplane">Plane: Brick Biplane</option>
-            <option value="brickairliner">Plane: Brick Airliner</option>
-            <option value="brickseaplane">Plane: Brick Seaplane</option>
-            <option value="brickjet">Plane: Brick Jet</option>
-          </select>
-          <label class="sr-only" for="time-of-day">Time of Day</label>
-          <select id="time-of-day" class="mc-button" data-setting="time">
-            <option value="dawn">Time: Dawn</option>
-            <option value="noon">Time: Noon</option>
-            <option value="sunset">Time: Sunset</option>
-            <option value="night">Time: Night</option>
-            <option value="cycle">Time: Day Cycle</option>
-          </select>
-          <label class="sr-only" for="weather">Weather</label>
-          <select id="weather" class="mc-button" data-setting="weather">
-            <option value="auto">Weather: Auto</option>
-            <option value="clear">Weather: Clear</option>
-            <option value="cloudy">Weather: Cloudy</option>
-            <option value="rain">Weather: Rain</option>
-            <option value="storm">Weather: Storm</option>
-            <option value="fog">Weather: Fog</option>
-          </select>
-          <label class="sr-only" for="graphics-quality">Graphics</label>
-          <select id="graphics-quality" class="mc-button" data-setting="quality">
-            <option value="low">Graphics: Low</option>
-            <option value="medium">Graphics: Medium</option>
-            <option value="high">Graphics: High</option>
-            <option value="ultra">Graphics: Ultra</option>
-          </select>
-          <button id="invert-y" class="mc-button" type="button"></button>
-          <button id="speed-fx" class="mc-button" type="button"></button>
-          <div class="mc-slider">
-            <label class="sr-only" for="mouse-sensitivity">Mouse Sensitivity</label>
-            <input id="mouse-sensitivity" type="range" min="0.3" max="2.5" step="0.1" />
-            <span class="mc-slider-label">Sensitivity: <span id="mouse-sensitivity-value"></span></span>
+          <div class="settings-tabs">
+            <button class="settings-tab active" type="button" data-tab="game">Game</button>
+            <button class="settings-tab" type="button" data-tab="graphics">Video</button>
+            <button class="settings-tab" type="button" data-tab="controls">Controls</button>
+            <button class="settings-tab" type="button" data-tab="audio">Audio</button>
+          </div>
+          <div class="settings-page" data-page="game">
+            <select class="mc-button" data-setting="plane" aria-label="Plane">
+              <option value="standard">Plane: Standard</option>
+              <option value="mario">Plane: Super Mario</option>
+              <option value="f16">Plane: F-16 Style</option>
+              <option value="airshow">Plane: Air Show</option>
+              <option value="brickstorm">Plane: Brick Storm</option>
+              <option value="brickbiplane">Plane: Brick Biplane</option>
+              <option value="brickairliner">Plane: Brick Airliner</option>
+              <option value="brickseaplane">Plane: Brick Seaplane</option>
+              <option value="brickjet">Plane: Brick Jet</option>
+            </select>
+            <select class="mc-button" data-setting="time" aria-label="Time of day">
+              <option value="dawn">Time: Dawn</option>
+              <option value="noon">Time: Noon</option>
+              <option value="sunset">Time: Sunset</option>
+              <option value="night">Time: Night</option>
+              <option value="cycle">Time: Day Cycle</option>
+            </select>
+            <select class="mc-button" data-setting="weather" aria-label="Weather">
+              <option value="auto">Weather: Auto</option>
+              <option value="clear">Weather: Clear</option>
+              <option value="cloudy">Weather: Cloudy</option>
+              <option value="rain">Weather: Rain</option>
+              <option value="storm">Weather: Storm</option>
+              <option value="fog">Weather: Fog</option>
+            </select>
+          </div>
+          <div class="settings-page hidden" data-page="graphics">
+            <select class="mc-button" data-setting="quality" aria-label="Graphics quality">
+              <option value="low">Quality: Low</option>
+              <option value="medium">Quality: Medium</option>
+              <option value="high">Quality: High</option>
+              <option value="ultra">Quality: Ultra</option>
+            </select>
+            <button class="mc-button" type="button" data-toggle="godRays" data-label="God Rays &amp; Flare"></button>
+            <button class="mc-button" type="button" data-toggle="reflections" data-label="Water Reflections"></button>
+            <button class="mc-button" type="button" data-toggle="weatherFx" data-label="Rain &amp; Lightning"></button>
+            <button class="mc-button" type="button" data-toggle="life" data-label="Birds, Boats &amp; Smoke"></button>
+            <button class="mc-button" type="button" data-toggle="speedFx" data-label="Speed FX"></button>
+          </div>
+          <div class="settings-page hidden" data-page="controls">
+            <button class="mc-button" type="button" data-toggle="invertY" data-label="Invert Y"></button>
+            <div class="mc-slider">
+              <input type="range" min="0.3" max="2.5" step="0.1" data-slider="sensitivity" data-label="Sensitivity" data-format="x" aria-label="Mouse sensitivity" />
+              <span class="mc-slider-label"></span>
+            </div>
+          </div>
+          <div class="settings-page hidden" data-page="audio">
+            <button class="mc-button" type="button" data-toggle="music" data-label="Music"></button>
+            <div class="mc-slider">
+              <input type="range" min="0" max="1" step="0.05" data-slider="musicVolume" data-label="Music Volume" data-format="%" aria-label="Music volume" />
+              <span class="mc-slider-label"></span>
+            </div>
+            <button class="mc-button" type="button" data-toggle="sfx" data-label="Sound Effects"></button>
+            <div class="mc-slider">
+              <input type="range" min="0" max="1" step="0.05" data-slider="sfxVolume" data-label="Effects Volume" data-format="%" aria-label="Sound effects volume" />
+              <span class="mc-slider-label"></span>
+            </div>
           </div>
         </div>
         <div class="map-panel">
@@ -125,6 +147,7 @@ export class Hud {
         <div class="stick-dot" id="stick-dot"></div>
         <div class="damage-flash" id="damage-flash"></div>
         <div class="overlay" id="overlay"></div>
+        <div class="photo-hint">PHOTO MODE &middot; Mouse look &middot; WASD move &middot; Q/E down/up &middot; Shift faster &middot; Wheel zoom &middot; <strong>K</strong> save picture &middot; <strong>O</strong> exit</div>
       </div>
     `;
 
@@ -173,10 +196,10 @@ export class Hud {
         select.blur();
       });
     }
-    const toggle = (selector, key, label) => {
-      const button = find(selector);
+    for (const button of this.root.querySelectorAll("[data-toggle]")) {
+      const key = button.dataset.toggle;
       const render = (value) => {
-        button.textContent = `${label}: ${value ? "On" : "Off"}`;
+        button.textContent = `${button.dataset.label}: ${value ? "On" : "Off"}`;
         button.dataset.value = value ? "1" : "";
       };
       render(settings[key]);
@@ -186,21 +209,54 @@ export class Hud {
         onSettingChange?.(key, value);
         button.blur();
       });
-    };
-    toggle("#invert-y", "invertY", "Invert Y");
-    toggle("#speed-fx", "speedFx", "Speed FX");
-    const slider = find("#mouse-sensitivity");
-    const sliderValue = find("#mouse-sensitivity-value");
-    slider.value = settings.sensitivity;
-    sliderValue.textContent = `${Number(settings.sensitivity).toFixed(2)}x`;
-    slider.addEventListener("input", () => {
-      const value = Number(slider.value);
-      sliderValue.textContent = `${value.toFixed(2)}x`;
-      onSettingChange?.("sensitivity", value);
-    });
-    slider.addEventListener("change", () => slider.blur());
+    }
+    for (const slider of this.root.querySelectorAll("[data-slider]")) {
+      const key = slider.dataset.slider;
+      const label = slider.nextElementSibling;
+      const render = (value) => {
+        const shown = slider.dataset.format === "%" ? `${Math.round(value * 100)}%` : `${value.toFixed(2)}x`;
+        label.textContent = `${slider.dataset.label}: ${shown}`;
+      };
+      slider.value = settings[key];
+      render(Number(settings[key]));
+      slider.addEventListener("input", () => {
+        render(Number(slider.value));
+        onSettingChange?.(key, Number(slider.value));
+      });
+      slider.addEventListener("change", () => slider.blur());
+    }
+    const tabs = [...this.root.querySelectorAll(".settings-tab")];
+    for (const tab of tabs) {
+      tab.addEventListener("click", () => {
+        for (const other of tabs) {
+          other.classList.toggle("active", other === tab);
+        }
+        for (const page of this.root.querySelectorAll(".settings-page")) {
+          page.classList.toggle("hidden", page.dataset.page !== tab.dataset.tab);
+        }
+        tab.blur();
+      });
+    }
 
-    this.overlayEl.addEventListener("click", () => onResume?.());
+    this.overlayEl.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]");
+      if (action) {
+        event.stopPropagation();
+        onAction?.(action.dataset.action, this.overlayEl.querySelector("#seed-input")?.value);
+        action.blur();
+        return;
+      }
+      if (event.target.closest("input, .board")) {
+        return;
+      }
+      onResume?.();
+    });
+    this.overlayEl.addEventListener("keydown", (event) => {
+      if (event.target.id === "seed-input" && event.key === "Enter") {
+        event.stopPropagation();
+        onAction?.("seed", event.target.value);
+      }
+    });
     this.bannerTimer = null;
     this.lastMissiles = null;
   }
@@ -330,30 +386,84 @@ export class Hud {
     }
   }
 
-  setOverlay(state, { score = 0, best = 0, wave = 0, paused = false } = {}) {
+  boardMarkup(board) {
+    if (!board) {
+      return "";
+    }
+    const escape = (text) => String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    const status = board.loading && board.online === null ? "Loading..." : board.online ? "World Top 10" : "Offline - this browser only";
+    const rows = board.entries.length
+      ? board.entries
+          .map(
+            (entry) => `<tr class="${entry.mine ? "mine" : ""}">
+              <td>${entry.rank}</td><td class="name">${escape(entry.name)}</td><td class="score">${entry.score}</td>
+              <td>${entry.wave}</td><td>${escape(entry.date)}</td></tr>`
+          )
+          .join("")
+      : `<tr><td colspan="5" class="empty">No scores yet - be the first!</td></tr>`;
+    const yourRank = board.yourRank && board.yourRank > 10 ? `<div class="board-you">Your best: rank #${board.yourRank}</div>` : "";
+    return `
+      <div class="board">
+        <div class="board-head"><span>HIGH SCORES</span><span class="board-status">${status}</span></div>
+        <table>
+          <thead><tr><th>#</th><th>Pilot</th><th>Score</th><th>Wave</th><th>Date</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        ${yourRank}
+        <div class="board-pilot">Pilot: <strong>${escape(board.pilot)}</strong>
+          <button class="mini-button" type="button" data-action="rename">New name</button></div>
+      </div>`;
+  }
+
+  // Refreshes just the score table, so a late server reply does not wipe what the player typed.
+  updateBoard(board) {
+    const node = this.overlayEl.querySelector(".board");
+    if (node) {
+      node.outerHTML = this.boardMarkup(board);
+    }
+  }
+
+  setOverlay(state, { score = 0, best = 0, wave = 0, paused = false, seed = 0, mode = "combat", board = null, result = null } = {}) {
     this.settingsEl.classList.toggle("hidden", !(paused || state === GAME_STATES.START || state === GAME_STATES.GAME_OVER));
     if (state === GAME_STATES.START) {
       this.overlayEl.className = "overlay overlay-title";
       this.overlayEl.innerHTML = `
         <div class="title-screen">
-          <div class="logo">VOXEL SKY FIGHTER<span class="splash">Now with missiles!</span></div>
-          <p>Hold <strong>Shift</strong> to accelerate down the runway, then pull up with <strong>W</strong>.</p>
-          <p><strong>Mouse</strong> steers, <strong>Left Click / Space</strong> fires guns, <strong>Right Click / F</strong> launches a locked missile.</p>
-          <p>Clear each wave, fly through gold rings, and land on the runway to repair and rearm.</p>
-          <p class="hint">Best score: <strong>${best}</strong> &middot; press <strong>H</strong> in flight for the full controls.</p>
-          <div class="press-key">Press <strong>Enter</strong> or click to start</div>
+          <div class="logo">VOXEL SKY FIGHTER<span class="splash">Now with leaderboards!</span></div>
+          <p>Hold <strong>Shift</strong> to accelerate down the runway, then pull up with <strong>W</strong>.
+            <strong>Mouse</strong> steers, <strong>Left Click</strong> fires, <strong>Right Click</strong> launches a locked missile.</p>
+          <div class="menu-row">
+            <button class="mc-button menu-button" type="button" data-action="combat">Start Mission</button>
+            <button class="mc-button menu-button" type="button" data-action="free">Free Flight</button>
+          </div>
+          <div class="menu-row seed-row">
+            <label for="seed-input">World seed</label>
+            <input id="seed-input" class="seed-input" type="text" inputmode="numeric" maxlength="9" value="${seed}" />
+            <button class="mini-button" type="button" data-action="seed">Go</button>
+            <button class="mini-button" type="button" data-action="random-seed">Random</button>
+          </div>
+          ${this.boardMarkup(board)}
+          <p class="hint">Best score: <strong>${best}</strong> &middot; <strong>H</strong> controls &middot; <strong>O</strong> photo mode</p>
         </div>
       `;
       return;
     }
 
     if (state === GAME_STATES.GAME_OVER) {
+      const verdict = result
+        ? result.improved
+          ? `NEW HIGH SCORE!${result.rank ? ` Rank #${result.rank}` : ""}`
+          : `Your best still stands${result.rank ? ` at rank #${result.rank}` : ""}`
+        : score > 0
+          ? "Sending score..."
+          : "";
       this.overlayEl.className = "overlay overlay-dead";
       this.overlayEl.innerHTML = `
         <div class="death-screen">
           <h2>You Died!</h2>
           <p>Score: <strong>${score}</strong> &middot; Wave <strong>${wave}</strong></p>
-          <p>${score >= best && score > 0 ? "New best score!" : `Best: <strong>${best}</strong>`}</p>
+          <p class="verdict">${verdict}</p>
+          ${this.boardMarkup(board)}
           <div class="press-key">Press <strong>R</strong> to respawn</div>
         </div>
       `;
@@ -365,7 +475,7 @@ export class Hud {
       this.overlayEl.innerHTML = `
         <div class="title-screen">
           <div class="logo">PAUSED</div>
-          <p>Settings are in the top right corner.</p>
+          <p>Settings are in the top right corner.${mode === "free" ? " Hold <strong>R</strong> to return to the menu." : ""}</p>
           <div class="press-key">Click or press <strong>Esc</strong> to resume</div>
         </div>
       `;
@@ -373,5 +483,9 @@ export class Hud {
     }
 
     this.overlayEl.className = "overlay hidden";
+  }
+
+  setPhotoMode(active) {
+    this.root.classList.toggle("photo-mode", active);
   }
 }

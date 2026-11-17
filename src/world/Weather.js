@@ -87,6 +87,7 @@ export class Weather {
     this.state = { ...WEATHER_PRESETS.clear };
     this.target = WEATHER_PRESETS.clear;
     this.auto = false;
+    this.fx = true;
     this.autoTimer = 0;
     this.changing = false;
     this.flash = 0;
@@ -193,7 +194,7 @@ export class Weather {
     }
     this.previousCamera.copy(cameraPosition);
 
-    this.rain.visible = rain > 0.01;
+    this.rain.visible = rain > 0.01 && this.fx;
     if (this.rain.visible) {
       const uniforms = this.rain.material.uniforms;
       const drift = 6 + storm * 10;
@@ -206,7 +207,7 @@ export class Weather {
       uniforms.uColor.value.setRGB(0.6, 0.68, 0.8).multiplyScalar(0.12 + lightAmount * 0.75 + this.flash * 2);
     }
 
-    if (storm > 0.6) {
+    if (storm > 0.6 && this.fx) {
       this.strikeTimer -= delta;
       if (this.strikeTimer <= 0) {
         this.strikeTimer = 4 + Math.random() * 9;

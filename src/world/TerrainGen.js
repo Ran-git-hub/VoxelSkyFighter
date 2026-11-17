@@ -3,7 +3,18 @@
 // match what is drawn, so all of it is deterministic from WORLD_SEED alone.
 import { createSimplex, fbm, hash2, ridged } from "./Noise.js";
 
-export const WORLD_SEED = 1337;
+export const DEFAULT_SEED = 1337;
+
+// The seed travels in the page URL (?seed=), and the chunk workers are started with the same
+// query, so every thread builds the identical world without any messages about it.
+function readSeed() {
+  const value = Number.parseInt(new URLSearchParams(globalThis.location?.search ?? "").get("seed") ?? "", 10);
+  return Number.isFinite(value) && value >= 0 ? value % 1000000000 : DEFAULT_SEED;
+}
+
+export const WORLD_SEED = readSeed();
+// Zero for the default seed, so the original world keeps its exact trees and landmarks.
+const SEED_SALT = WORLD_SEED - DEFAULT_SEED;
 export const BLOCK = 2;
 export const SEA_LEVEL = -6;
 export const RUNWAY = { length: 900, width: 28, halfLength: 450, halfWidth: 14 };
@@ -236,12 +247,12 @@ const TREE_DENSITY = {
 const treeColumn = { blocks: 0, biome: 0, airport: 0 };
 
 export function treeInCell(cx, cz, out) {
-  const roll = hash2(cx, cz, 71);
+  const roll = hash2(cx, cz, 71 + SEED_SALT);
   if (roll > 0.62) {
     return null;
   }
-  const bx = cx * (TREE_CELL / BLOCK) + Math.floor(hash2(cx, cz, 72) * (TREE_CELL / BLOCK));
-  const bz = cz * (TREE_CELL / BLOCK) + Math.floor(hash2(cx, cz, 73) * (TREE_CELL / BLOCK));
+  const bx = cx * (TREE_CELL / BLOCK) + Math.floor(hash2(cx, cz, 72 + SEED_SALT) * (TREE_CELL / BLOCK));
+  const bz = cz * (TREE_CELL / BLOCK) + Math.floor(hash2(cx, cz, 73 + SEED_SALT) * (TREE_CELL / BLOCK));
   const x = (bx + 0.5) * BLOCK;
   const z = (bz + 0.5) * BLOCK;
   sampleColumn(x, z, treeColumn);
@@ -260,8 +271,8 @@ export function treeInCell(cx, cz, out) {
   out.x = x;
   out.y = blocks * BLOCK;
   out.z = z;
-  out.scale = (0.85 + hash2(cx, cz, 74) * 0.5) * BLOCK;
-  out.tint = hash2(cx, cz, 75);
+  out.scale = (0.85 + hash2(cx, cz, 74 + SEED_SALT) * 0.5) * BLOCK;
+  out.tint = hash2(cx, cz, 75 + SEED_SALT);
   return out;
 }
 
@@ -290,12 +301,12 @@ export function landmarkInCell(cx, cz) {
     return landmarkCache.get(key);
   }
   let result = null;
-  if (hash2(cx, cz, 91) < 0.8) {
-    const x = Math.round(((cx + 0.5) * LANDMARK_CELL + (hash2(cx, cz, 92) - 0.5) * 520) / BLOCK) * BLOCK;
-    const z = Math.round(((cz + 0.5) * LANDMARK_CELL + (hash2(cx, cz, 93) - 0.5) * 520) / BLOCK) * BLOCK;
+  if (hash2(cx, cz, 91 + SEED_SALT) < 0.8) {
+    const x = Math.round(((cx + 0.5) * LANDMARK_CELL + (hash2(cx, cz, 92 + SEED_SALT) - 0.5) * 520) / BLOCK) * BLOCK;
+    const z = Math.round(((cz + 0.5) * LANDMARK_CELL + (hash2(cx, cz, 93 + SEED_SALT) - 0.5) * 520) / BLOCK) * BLOCK;
     if (Math.hypot(x, z) > 900) {
       sampleColumn(x, z, landmarkColumn);
-      const pick = hash2(cx, cz, 94);
+      const pick = hash2(cx, cz, 94 + SEED_SALT);
       let type = null;
       if (landmarkColumn.biome === BIOME.PLAINS || landmarkColumn.biome === BIOME.FOREST) {
         type = pick < 0.55 ? "village" : "windmill";
@@ -308,7 +319,7 @@ export function landmarkInCell(cx, cz) {
       }
       if (type) {
         const radius = { village: 46, windmill: 12, lighthouse: 10, pyramid: 34, tower: 10 }[type];
-        result = { type, x, z, radius, seed: Math.floor(hash2(cx, cz, 95) * 1e9) };
+        result = { type, x, z, radius, seed: Math.floor(hash2(cx, cz, 95 + SEED_SALT) * 1e9) };
       }
     }
   }

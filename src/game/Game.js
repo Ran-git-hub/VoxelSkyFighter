@@ -22,6 +22,9 @@ import { Effects } from "./Effects.js";
 import { Life } from "../world/Life.js";
 import { Hud } from "../ui/Hud.js";
 import { DebugPanel } from "../ui/DebugPanel.js";
+import { Leaderboard } from "./Leaderboard.js";
+import { WORLD_SEED } from "../world/TerrainGen.js";
+import { runSelfTest } from "./SelfTest.js";
 
 const TRICK_LABELS = {
   roll: "BARREL ROLL!",
@@ -31,11 +34,29 @@ const TRICK_LABELS = {
 };
 
 const STORAGE_PREFIX = "vsf.";
-const DEFAULT_SETTINGS = { plane: "standard", time: "noon", weather: "auto", quality: "high", sensitivity: 1, invertY: false, speedFx: true };
+const DEFAULT_SETTINGS = {
+  plane: "standard",
+  time: "noon",
+  weather: "auto",
+  quality: "high",
+  sensitivity: 1,
+  invertY: false,
+  speedFx: true,
+  godRays: true,
+  reflections: true,
+  weatherFx: true,
+  life: true,
+  music: true,
+  musicVolume: 1,
+  sfx: true,
+  sfxVolume: 1,
+};
 const PLAYING_STATES = new Set([GAME_STATES.TAXI, GAME_STATES.TAKEOFF, GAME_STATES.FLYING, GAME_STATES.LANDING]);
 const RADAR_RANGE = 420;
 const RESTART_HOLD = 0.9;
 const TRACK_CONE = 0.5;
+const PHOTO_LOOK = 0.0025;
+const PHOTO_SPEED = 30;
 
 function loadStored(key, fallback) {
   try {
@@ -80,6 +101,7 @@ export class Game {
         this.audio.playClick();
       },
       onResume: () => this.handleConfirm(),
+      onAction: (action, value) => this.handleMenuAction(action, value),
     });
     this.player = new PlayerPlane();
     this.projectiles = [];
@@ -87,6 +109,16 @@ export class Game {
     this.enemies = [];
     this.rings = [];
     this.state = GAME_STATES.START;
+    this.mode = "combat";
+    this.photo = null;
+    this.respawns = 0;
+    this.submitResult = null;
+    this.leaderboard = new Leaderboard();
+    this.leaderboard.onChange = () => {
+      if (this.state === GAME_STATES.START || (this.state === GAME_STATES.GAME_OVER && this.deathTimer <= 0)) {
+        this.hud.updateBoard(this.boardState());
+      }
+    };
     this.paused = false;
     this.cameraYaw = 0;
     this.cameraPitch = 0;
@@ -114,6 +146,10 @@ export class Game {
 
     if (this.debug) {
       window.__game = this;
+      this.selfTest = () => runSelfTest(this);
+      if (new URLSearchParams(window.location.search).has("selftest")) {
+        setTimeout(() => this.hud.showBanner("SELF TEST", this.selfTest().passed ? "all passed" : "FAILED - see console"), 1500);
+      }
       this.debugPanel = new DebugPanel(hudRoot);
     }
 
@@ -156,6 +192,14 @@ export class Game {
       this.input.setMouseSensitivity(value);
     } else if (key === "invertY") {
       this.input.invertY = value;
+    } else if (key === "godRays" || key === "reflections") {
+      this.graphics.setToggle(key, value);
+    } else if (key === "weatherFx") {
+      this.atmosphere.weather.fx = value;
+    } else if (key === "life") {
+      this.life.setEnabled(value);
+    } else if (["music", "musicVolume", "sfx", "sfxVolume"].includes(key)) {
+      this.audio.setLevels(this.settings);
     }
   }
 
@@ -184,6 +228,7 @@ export class Game {
     this.input.attach();
     window.addEventListener("resize", this.onResize);
     this.refreshOverlay();
+    this.leaderboard.refresh();
     this.renderer.setAnimationLoop(() => this.update());
   }
 
@@ -191,13 +236,67 @@ export class Game {
     return Math.max(this.world.heightAt(x, z), this.world.seaLevel);
   }
 
+  boardState() {
+    const board = this.leaderboard;
+    return { entries: board.entries, online: board.online, loading: board.loading, yourRank: board.yourRank, pilot: board.pilot.name };
+  }
+
   refreshOverlay() {
-    this.hud.setOverlay(this.state, { score: this.score, best: this.best, wave: this.wave, paused: this.paused });
+    this.hud.setOverlay(this.state, {
+      score: this.score,
+      best: this.best,
+      wave: this.wave,
+      paused: this.paused,
+      seed: WORLD_SEED,
+      mode: this.mode,
+      board: this.boardState(),
+      result: this.submitResult,
+    });
+  }
+
+  handleMenuAction(action, value) {
+    this.audio.ensureStarted();
+    if (action === "combat" || action === "free") {
+      this.startRun(action);
+    } else if (action === "rename") {
+      this.audio.playClick();
+      this.leaderboard.rename();
+    } else if (action === "seed" || action === "random-seed") {
+      // The terrain workers read the seed at start-up, so a new world means a fresh page load.
+      const seed = action === "seed" ? Number.parseInt(String(value).trim(), 10) : Math.floor(Math.random() * 1e9);
+      if (!Number.isFinite(seed) || seed < 0 || seed >= 1e9) {
+        this.audio.playDenied();
+        return;
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.set("seed", seed);
+      window.location.assign(url);
+    }
+  }
+
+  startRun(mode) {
+    if (this.state !== GAME_STATES.START) {
+      return;
+    }
+    this.mode = mode;
+    this.audio.playClick();
+    this.input.clearAimToCenter();
+    this.input.requestLock();
+    this.state = GAME_STATES.TAXI;
+    this.player.beginRun();
+    this.paused = false;
+    if (mode === "free") {
+      this.hud.showBanner("FREE FLIGHT", "No enemies - explore, sightsee, take pictures with O");
+    }
+    this.refreshOverlay();
   }
 
   setPaused(paused) {
     if (this.paused === paused) {
       return;
+    }
+    if (paused && this.photo) {
+      this.togglePhoto();
     }
     this.paused = paused;
     this.refreshOverlay();
@@ -207,13 +306,7 @@ export class Game {
   handleConfirm() {
     this.audio.ensureStarted();
     if (this.state === GAME_STATES.START) {
-      this.audio.playClick();
-      this.input.clearAimToCenter();
-      this.input.requestLock();
-      this.state = GAME_STATES.TAXI;
-      this.player.beginRun();
-      this.paused = false;
-      this.refreshOverlay();
+      this.startRun("combat");
     } else if (this.state === GAME_STATES.GAME_OVER) {
       if (this.deathTimer <= 0) {
         this.reset();
@@ -237,6 +330,12 @@ export class Game {
     this.hud.clearToasts();
     this.resetRun();
     this.player.reset();
+    this.player.mesh.visible = true;
+    if (this.photo) {
+      this.togglePhoto();
+    }
+    this.submitResult = null;
+    this.leaderboard.refresh();
     this.state = GAME_STATES.START;
     this.paused = false;
     this.input.releaseLock();
@@ -252,6 +351,12 @@ export class Game {
         this.hud.toggleHelp();
       } else if (code === "Escape" && !this.input.requireLock && PLAYING_STATES.has(this.state)) {
         this.setPaused(!this.paused);
+      } else if (code === "KeyO" && !this.paused && (PLAYING_STATES.has(this.state) || this.state === GAME_STATES.GAME_OVER)) {
+        this.togglePhoto();
+      } else if (code === "KeyK" && this.photo) {
+        this.captureNext = true;
+      } else if (this.photo) {
+        continue;
       } else if (code === "KeyP" && !this.paused) {
         this.toggleAutoLanding();
       } else if (code === "KeyR" && this.state === GAME_STATES.GAME_OVER && this.deathTimer <= 0) {
@@ -303,7 +408,7 @@ export class Game {
       this.setPaused(this.input.requireLock);
     }
 
-    const playing = PLAYING_STATES.has(this.state) && !this.paused;
+    const playing = PLAYING_STATES.has(this.state) && !this.paused && !this.photo;
     if (playing) {
       this.simulate(delta);
     }
@@ -312,7 +417,7 @@ export class Game {
       this.chimneyTimer = (this.chimneyTimer ?? 0) - delta;
       if (this.chimneyTimer <= 0) {
         this.chimneyTimer = 0.22;
-        for (const top of this.world.chimneys()) {
+        for (const top of this.settings.life ? this.world.chimneys() : []) {
           if (top.distanceToSquared(this.player.mesh.position) < 520 * 520) {
             this.effects.chimney(top, this.atmosphere.weather.wind);
           }
@@ -337,7 +442,11 @@ export class Game {
     this.audio.updateEnemyDrone(playing ? this.nearestEnemyPosition() : null);
     this.audio.updateHeartbeat(playing && this.player.health <= 1);
     this.audio.tickMusic();
-    this.updateCamera(delta);
+    if (this.photo) {
+      this.updatePhotoCamera(frameTime);
+    } else {
+      this.updateCamera(delta);
+    }
     this.audio.updateListener(
       this.camera.position,
       this.camera.getWorldDirection(new THREE.Vector3()),
@@ -356,6 +465,10 @@ export class Game {
     this.graphics.setFocus(this.player.mesh.position);
     if (this.viewWidth >= 2 && this.viewHeight >= 2) {
       this.graphics.render(frameTime);
+      if (this.captureNext) {
+        this.captureNext = false;
+        this.savePicture();
+      }
     }
     if (this.debugPanel) {
       const chunks = this.world.stats();
@@ -412,7 +525,9 @@ export class Game {
         this.audio.playShoot();
       }
       this.updateLock(delta);
-      this.updateWave(delta);
+      if (this.mode === "combat") {
+        this.updateWave(delta);
+      }
     } else {
       this.lockTarget = null;
       this.lockProgress = 0;
@@ -938,8 +1053,33 @@ export class Game {
     this.killPlayer();
   }
 
+  // Free flight has no game over: the wreck explodes and a fresh plane appears overhead.
+  respawnFree() {
+    const player = this.player;
+    this.respawns += 1;
+    this.effects.explosion(player.mesh.position, 0xff5b5b, true);
+    this.splashIfSea(player.mesh.position);
+    this.audio.playExplosion(player.mesh.position, "large");
+    this.shake = 1.2;
+    const position = player.mesh.position;
+    position.y = Math.max(this.groundAt(position.x, position.z), this.world.seaLevel) + 80;
+    player.mesh.rotation.set(0, player.mesh.rotation.y, 0);
+    player.stunt = null;
+    player.crashed = false;
+    player.health = PLAYER_CONFIG.maxHealth;
+    player.state = GAME_STATES.FLYING;
+    player.velocity.copy(player.getShotDirection()).multiplyScalar(PLAYER_CONFIG.maxFlySpeed * 0.8);
+    this.state = GAME_STATES.FLYING;
+    this.input.clearAimToCenter();
+    this.hud.showBanner("RESPAWNED", "Free flight - crashes cost nothing");
+  }
+
   killPlayer() {
     if (this.state === GAME_STATES.GAME_OVER) {
+      return;
+    }
+    if (this.mode === "free") {
+      this.respawnFree();
       return;
     }
     const player = this.player;
@@ -959,6 +1099,15 @@ export class Game {
     if (this.score > this.best) {
       this.best = this.score;
       store("best", this.best);
+    }
+    this.submitResult = null;
+    if (this.score > 0) {
+      this.leaderboard.submit({ score: this.score, wave: this.wave, seed: WORLD_SEED }).then((result) => {
+        this.submitResult = result;
+        if (this.state === GAME_STATES.GAME_OVER && this.deathTimer <= 0) {
+          this.refreshOverlay();
+        }
+      });
     }
     this.input.releaseLock();
   }
@@ -1011,7 +1160,7 @@ export class Game {
 
     // Rain pocks the ground round the plane when it is low enough to see it.
     const rain = this.atmosphere.weather.state.rain;
-    if (rain > 0.05 && position.y - player.groundLevel < 70) {
+    if (rain > 0.05 && this.settings.weatherFx && position.y - player.groundLevel < 70) {
       for (let i = 0; i < Math.ceil(rain * 5); i += 1) {
         const x = position.x + THREE.MathUtils.randFloatSpread(90);
         const z = position.z + THREE.MathUtils.randFloatSpread(90);
@@ -1061,6 +1210,64 @@ export class Game {
         node.material.dispose();
       }
     });
+  }
+
+  togglePhoto() {
+    if (this.photo) {
+      this.photo = null;
+      this.hud.setPhotoMode(false);
+      this.camera.fov = 68;
+      this.camera.updateProjectionMatrix();
+      return;
+    }
+    const direction = this.camera.getWorldDirection(new THREE.Vector3());
+    this.photo = {
+      yaw: Math.atan2(-direction.x, -direction.z),
+      pitch: Math.asin(THREE.MathUtils.clamp(direction.y, -1, 1)),
+      fov: this.camera.fov,
+    };
+    this.input.consumeLook();
+    this.hud.setPhotoMode(true);
+  }
+
+  updatePhotoCamera(delta) {
+    const photo = this.photo;
+    const look = this.input.consumeLook();
+    photo.yaw -= look.x * PHOTO_LOOK * (photo.fov / 68);
+    photo.pitch = THREE.MathUtils.clamp(photo.pitch - look.y * PHOTO_LOOK * (photo.fov / 68), -1.5, 1.5);
+    photo.fov = THREE.MathUtils.clamp(photo.fov + look.wheel * 4, 15, 100);
+    const camera = this.camera;
+    camera.rotation.set(photo.pitch, photo.yaw, 0, "YXZ");
+    if (camera.fov !== photo.fov) {
+      camera.fov = photo.fov;
+      camera.updateProjectionMatrix();
+    }
+    const keys = this.input.keys;
+    const move = new THREE.Vector3(
+      (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0),
+      (keys.has("KeyE") ? 1 : 0) - (keys.has("KeyQ") ? 1 : 0),
+      (keys.has("KeyS") ? 1 : 0) - (keys.has("KeyW") ? 1 : 0)
+    );
+    if (move.lengthSq() > 0) {
+      const boost = keys.has("ShiftLeft") || keys.has("ShiftRight") ? 4 : 1;
+      move.normalize().applyEuler(camera.rotation).multiplyScalar(PHOTO_SPEED * boost * delta);
+      camera.position.add(move);
+      camera.position.y = Math.max(camera.position.y, this.groundAt(camera.position.x, camera.position.z) + 1.5);
+    }
+  }
+
+  savePicture() {
+    this.canvas.toBlob((blob) => {
+      if (!blob) {
+        return;
+      }
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `voxel-sky-fighter-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.png`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      this.audio.playClick();
+    }, "image/png");
   }
 
   updateCamera(delta) {
@@ -1266,7 +1473,7 @@ export class Game {
       health: player.health,
       score: this.score,
       best: Math.max(this.best, this.score),
-      wave: this.wave === 0 ? "-" : this.waveActive ? `${this.wave}` : `${this.wave} (cleared)`,
+      wave: this.mode === "free" ? "Free flight" : this.wave === 0 ? "-" : this.waveActive ? `${this.wave}` : `${this.wave} (cleared)`,
       missiles: player.missiles,
       boost: player.boost,
       combo: this.combo,
