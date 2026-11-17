@@ -863,7 +863,6 @@ body {
   opacity: 0.7;
 }
 
-.board-you,
 .board-pilot {
   margin-top: 6px;
   font-size: 13px;
@@ -906,4 +905,9 @@ body {
   color: #8fd3ff;
   text-align: left;
   text-transform: capitalize;
+}
+
+.board tr.current td {
+  color: #000000;
+  background: #ffd257;
 }

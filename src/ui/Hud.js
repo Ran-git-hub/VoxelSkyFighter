@@ -395,13 +395,12 @@ export class Hud {
     const rows = board.entries.length
       ? board.entries
           .map(
-            (entry) => `<tr class="${entry.mine ? "mine" : ""}">
+            (entry) => `<tr class="${entry.current ? "current" : entry.mine ? "mine" : ""}">
               <td>${entry.rank}</td><td class="name">${escape(entry.name)}</td><td class="score">${entry.score}</td>
               <td>${entry.wave}</td><td>${escape(entry.date)}</td></tr>`
           )
           .join("")
       : `<tr><td colspan="5" class="empty">No scores yet - be the first!</td></tr>`;
-    const yourRank = board.yourRank && board.yourRank > 10 ? `<div class="board-you">Your best: rank #${board.yourRank}</div>` : "";
     return `
       <div class="board">
         <div class="board-head"><span>HIGH SCORES</span><span class="board-status">${status}</span></div>
@@ -409,7 +408,6 @@ export class Hud {
           <thead><tr><th>#</th><th>Pilot</th><th>Score</th><th>Wave</th><th>Date</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
-        ${yourRank}
         <div class="board-pilot">Pilot: <strong>${escape(board.pilot)}</strong>
           <button class="mini-button" type="button" data-action="rename">New name</button></div>
       </div>`;
@@ -452,9 +450,11 @@ export class Hud {
 
     if (state === GAME_STATES.GAME_OVER) {
       const verdict = result
-        ? result.improved
-          ? `NEW HIGH SCORE!${result.rank ? ` Rank #${result.rank}` : ""}`
-          : `Your best still stands${result.rank ? ` at rank #${result.rank}` : ""}`
+        ? result.rank === 1
+          ? "NEW HIGH SCORE! Rank #1"
+          : result.rank
+            ? `You made the board! Rank #${result.rank}`
+            : "Not in the top 10 this time"
         : score > 0
           ? "Sending score..."
           : "";

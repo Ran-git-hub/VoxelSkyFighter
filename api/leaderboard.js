@@ -1,12 +1,13 @@
-// Global leaderboard on Upstash Redis (REST), one best score per pilot.
-// Needs KV_REST_API_URL / KV_REST_API_TOKEN, which the Upstash integration on Vercel provides.
+// Global leaderboard on Upstash Redis (REST): every finished run is an entry, and only the
+// ten highest survive. Needs KV_REST_API_URL / KV_REST_API_TOKEN from the Upstash integration.
 const REDIS_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 
 const BOARD = "vsf:board";
-const pilotKey = (id) => `vsf:pilot:${id}`;
+const runKey = (id) => `vsf:run:${id}`;
+// Before runs had their own entries the board held one best score per pilot, keyed by pilot id.
+const legacyKey = (id) => `vsf:pilot:${id}`;
 const TOP = 10;
-const KEEP = 1000;
 const ID_PATTERN = /^[0-9a-f-]{36}$/;
 const NAME_PATTERN = /^[A-Z]+ [A-Z]+ \d{2}$/;
 // Scores are reported by the browser, so these only stop absurd values, not a determined cheat.
@@ -40,20 +41,21 @@ export async function GET(request) {
   if (!configured()) {
     return json({ error: "leaderboard storage is not configured" }, 503);
   }
-  const id = new URL(request.url).searchParams.get("id");
+  const params = new URL(request.url).searchParams;
+  const pilot = params.get("id");
+  const run = params.get("run");
   const [top] = await redis([["ZRANGE", BOARD, 0, TOP - 1, "REV", "WITHSCORES"]]);
   const ids = [];
   for (let i = 0; i < top.length; i += 2) {
     ids.push(top[i]);
   }
-  const lookups = ids.map((pilot) => ["HMGET", pilotKey(pilot), "name", "wave", "seed", "date"]);
-  const mine = id && ID_PATTERN.test(id);
-  if (mine) {
-    lookups.push(["ZREVRANK", BOARD, id], ["ZSCORE", BOARD, id]);
-  }
-  const results = lookups.length ? await redis(lookups) : [];
-  const entries = ids.map((pilot, index) => {
-    const [name, wave, seed, date] = results[index];
+  const fields = ["name", "wave", "seed", "date", "pilot"];
+  const details = ids.length
+    ? await redis(ids.flatMap((id) => [["HMGET", runKey(id), ...fields], ["HMGET", legacyKey(id), ...fields]]))
+    : [];
+  const entries = ids.map((id, index) => {
+    const current = details[index * 2];
+    const [name, wave, seed, date, owner] = current[0] !== null ? current : details[index * 2 + 1];
     return {
       rank: index + 1,
       name: name ?? "UNKNOWN PILOT",
@@ -61,14 +63,11 @@ export async function GET(request) {
       wave: Number(wave ?? 0),
       seed: Number(seed ?? 0),
       date: date ?? "",
-      mine: pilot === id,
+      mine: Boolean(pilot) && (owner ?? id) === pilot,
+      current: Boolean(run) && id === run,
     };
   });
-  let you = null;
-  if (mine && results[ids.length] !== null) {
-    you = { rank: results[ids.length] + 1, score: Number(results[ids.length + 1]) };
-  }
-  return json({ entries, you });
+  return json({ entries });
 }
 
 export async function POST(request) {
@@ -95,27 +94,20 @@ export async function POST(request) {
     return json({ error: "invalid score" }, 400);
   }
 
-  const [allowed, previous] = await redis([
-    ["SET", `vsf:rate:${id}`, "1", "NX", "EX", "5"],
-    ["ZSCORE", BOARD, id],
-  ]);
+  const [allowed] = await redis([["SET", `vsf:rate:${id}`, "1", "NX", "EX", "3"]]);
   if (allowed === null) {
     return json({ error: "too many submissions" }, 429);
   }
-  const improved = previous === null || score > Number(previous);
-  const commands = [];
-  if (improved) {
-    const date = new Date().toISOString().slice(0, 10);
-    commands.push(
-      ["ZADD", BOARD, score, id],
-      ["HSET", pilotKey(id), "name", name, "wave", wave, "seed", seed, "date", date],
-      ["ZREMRANGEBYRANK", BOARD, 0, -(KEEP + 1)]
-    );
-  } else {
-    commands.push(["HSET", pilotKey(id), "name", name]);
+  const run = crypto.randomUUID();
+  const date = new Date().toISOString().slice(0, 10);
+  const [, , rank, dropped] = await redis([
+    ["ZADD", BOARD, score, run],
+    ["HSET", runKey(run), "name", name, "wave", wave, "seed", seed, "date", date, "pilot", id],
+    ["ZREVRANK", BOARD, run],
+    ["ZRANGE", BOARD, TOP, -1, "REV"],
+  ]);
+  if (dropped.length) {
+    await redis([["ZREM", BOARD, ...dropped], ["DEL", ...dropped.flatMap((gone) => [runKey(gone), legacyKey(gone)])]]);
   }
-  commands.push(["ZREVRANK", BOARD, id]);
-  const results = await redis(commands);
-  const rank = results[results.length - 1];
-  return json({ improved, rank: rank === null ? null : rank + 1 });
+  return json({ run, rank: rank !== null && rank < TOP ? rank + 1 : null });
 }

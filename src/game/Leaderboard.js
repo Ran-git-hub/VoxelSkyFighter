@@ -37,8 +37,8 @@ function writeJson(key, value) {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-// Global scores go to the serverless endpoint; when it is missing or unreachable the
-// board falls back to this browser's own scores so the game still has a table to show.
+// Every finished run is sent to the serverless endpoint, which keeps the ten best. When it is
+// missing or unreachable the board falls back to this browser's own ten best runs.
 export class Leaderboard {
   constructor() {
     this.pilot = readJson(PILOT_KEY, null);
@@ -48,7 +48,7 @@ export class Leaderboard {
     }
     this.online = null;
     this.entries = [];
-    this.yourRank = null;
+    this.lastRun = null;
     this.loading = false;
     this.onChange = null;
   }
@@ -67,14 +67,16 @@ export class Leaderboard {
     this.loading = true;
     this.changed();
     try {
-      const response = await fetch(`${ENDPOINT}?id=${encodeURIComponent(this.pilot.id)}`, { cache: "no-store" });
+      const query = new URLSearchParams({ id: this.pilot.id });
+      if (this.lastRun) {
+        query.set("run", this.lastRun);
+      }
+      const response = await fetch(`${ENDPOINT}?${query}`, { cache: "no-store" });
       if (!response.ok) {
         throw new Error(`status ${response.status}`);
       }
-      const data = await response.json();
+      this.entries = (await response.json()).entries;
       this.online = true;
-      this.entries = data.entries;
-      this.yourRank = data.you?.rank ?? null;
     } catch {
       this.useLocal();
     }
@@ -84,37 +86,31 @@ export class Leaderboard {
 
   useLocal() {
     this.online = false;
-    const board = readJson(LOCAL_KEY, []);
-    this.entries = board.map((entry, index) => ({ ...entry, rank: index + 1, mine: entry.id === this.pilot.id }));
-    const mine = this.entries.find((entry) => entry.mine);
-    this.yourRank = mine ? mine.rank : null;
+    this.entries = readJson(LOCAL_KEY, []).map((entry, index) => ({
+      ...entry,
+      rank: index + 1,
+      mine: entry.pilot === this.pilot.id,
+      current: entry.run === this.lastRun,
+    }));
   }
 
-  saveLocal({ score, wave, seed }) {
+  // Returns the rank this run earned on the local top ten, or null if it fell off.
+  saveLocal({ run, score, wave, seed }) {
     const board = readJson(LOCAL_KEY, []);
-    const existing = board.find((entry) => entry.id === this.pilot.id);
-    const improved = !existing || score > existing.score;
-    if (existing) {
-      existing.name = this.pilot.name;
-    }
-    if (improved) {
-      const entry = existing ?? { id: this.pilot.id };
-      Object.assign(entry, { name: this.pilot.name, score, wave, seed, date: today() });
-      if (!existing) {
-        board.push(entry);
-      }
-    }
+    board.push({ run, pilot: this.pilot.id, name: this.pilot.name, score, wave, seed, date: today() });
     board.sort((a, b) => b.score - a.score);
-    writeJson(LOCAL_KEY, board.slice(0, LOCAL_SIZE));
-    return improved;
+    const kept = board.slice(0, LOCAL_SIZE);
+    writeJson(LOCAL_KEY, kept);
+    const index = kept.findIndex((entry) => entry.run === run);
+    return index < 0 ? null : index + 1;
   }
 
-  // Returns { improved, rank } once the server (or the local fallback) has answered.
+  // Returns { rank } once the server (or the local fallback) has answered; rank is null
+  // when the run did not make the top ten.
   async submit({ score, wave, seed }) {
     if (score <= 0) {
-      return { improved: false, rank: null };
+      return { rank: null };
     }
-    const improvedLocally = this.saveLocal({ score, wave, seed });
     try {
       const response = await fetch(ENDPOINT, {
         method: "POST",
@@ -125,12 +121,15 @@ export class Leaderboard {
         throw new Error(`status ${response.status}`);
       }
       const result = await response.json();
+      this.lastRun = result.run;
       await this.refresh();
-      return { improved: result.improved, rank: result.rank };
+      return { rank: result.rank };
     } catch {
+      this.lastRun = crypto.randomUUID();
+      const rank = this.saveLocal({ run: this.lastRun, score, wave, seed });
       this.useLocal();
       this.changed();
-      return { improved: improvedLocally, rank: this.yourRank };
+      return { rank };
     }
   }
 }

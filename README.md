@@ -32,7 +32,7 @@ Add `?debug` to the URL to show a debug panel with frame rate, draw calls and ch
 
 ## Leaderboard
 
-Each browser gets a random arcade-style pilot name (it can be rerolled on the title screen). The board keeps every pilot's best score, with the wave reached, the world seed and the date, and shows the world top 10.
+Each browser gets a random arcade-style pilot name (it can be rerolled on the title screen). Every finished mission is entered with its score, the wave reached, the world seed and the date; the board keeps only the ten highest, so one pilot can hold several places. Your runs show in green, and the run you just finished is highlighted.
 
 Scores are stored by the serverless function in `api/leaderboard.js`, which needs an [Upstash Redis](https://vercel.com/marketplace/upstash) database connected to the Vercel project (it reads `KV_REST_API_URL` and `KV_REST_API_TOKEN`). Without one, or when offline, the game falls back to a board of this browser's own scores.
 

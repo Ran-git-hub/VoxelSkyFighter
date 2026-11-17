@@ -238,7 +238,7 @@ export class Game {
 
   boardState() {
     const board = this.leaderboard;
-    return { entries: board.entries, online: board.online, loading: board.loading, yourRank: board.yourRank, pilot: board.pilot.name };
+    return { entries: board.entries, online: board.online, loading: board.loading, pilot: board.pilot.name };
   }
 
   refreshOverlay() {
