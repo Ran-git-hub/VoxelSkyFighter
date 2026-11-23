@@ -24,7 +24,7 @@ export const STAT_RANGES = {
 };
 
 export const DIFFICULTY = {
-  easy: { label: "Easy", enemies: 0.7, fire: 1.35, spread: 0.07, armor: 2, score: 0.8 },
-  normal: { label: "Normal", enemies: 1, fire: 1, spread: 0.02, armor: 0, score: 1 },
-  hard: { label: "Hard", enemies: 1.35, fire: 0.8, spread: 0.012, armor: -1, score: 1.3 },
+  easy: { label: "Easy", enemies: 0.7, fire: 1.35, spread: 0.07, ram: 0.15, armor: 2, score: 0.8 },
+  normal: { label: "Normal", enemies: 1, fire: 1, spread: 0.02, ram: 0.3, armor: 0, score: 1 },
+  hard: { label: "Hard", enemies: 1.35, fire: 0.8, spread: 0.012, ram: 0.5, armor: -1, score: 1.3 },
 };

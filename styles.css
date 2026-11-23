@@ -1056,3 +1056,8 @@ body {
   color: #55ff55;
   text-shadow: 2px 2px 0 #063a06;
 }
+
+.radar-contact[data-kind="repair"] {
+  background: #ffffff;
+  box-shadow: 0 0 0 2px #d8312c;
+}

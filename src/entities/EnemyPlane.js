@@ -183,8 +183,9 @@ const MUZZLES = {
 const AIMS = new Set(["turret", "bossGun"]);
 
 export class EnemyPlane {
-  // tuning comes from the difficulty: fire scales the time between bursts, spread blurs the aim (radians).
-  constructor(kind, spawnPosition, { fire = 1, spread = 0 } = {}) {
+  // tuning comes from the difficulty: fire scales the time between bursts, spread blurs the aim (radians),
+  // ram is the chance that a rammer's pass is aimed to hit rather than to fly close by.
+  constructor(kind, spawnPosition, { fire = 1, spread = 0, ram = 0.3 } = {}) {
     this.kind = kind;
     this.config = ENEMY_KINDS[kind];
     this.mesh = new THREE.Group();
@@ -197,6 +198,9 @@ export class EnemyPlane {
     this.previousDistance = null;
     this.radius = this.config.radius ?? ENEMY_CONFIG.collisionRadius * this.config.scale * (kind === "balloon" || kind === "turret" ? 1.5 : 1);
     this.fireScale = fire;
+    this.ramChance = ram;
+    this.missOffset = null;
+    this.passRange = Infinity;
     this.spread = spread;
     this.fireTimer = this.config.fireInterval * fire * (0.3 + Math.random() * 0.5);
     this.burstLeft = 0;
@@ -293,6 +297,26 @@ export class EnemyPlane {
       }
       desired.x += Math.sin(this.weave * 1.3) * 18;
       desired.y += Math.cos(this.weave * 0.9) * 10;
+    } else {
+      // Rammers make passes: only some are aimed to connect, the rest skim past and come round again.
+      if (!this.missOffset) {
+        const miss = Math.random() >= this.ramChance;
+        // Sideways to the line of approach, or the offset could point straight along it and change nothing.
+        const line = toPlayer.clone().normalize();
+        const side = new THREE.Vector3(Math.random() - 0.5, (Math.random() - 0.5) * 0.4, Math.random() - 0.5);
+        side.addScaledVector(line, -side.dot(line));
+        if (side.lengthSq() < 1e-4) {
+          side.set(-line.z, 0, line.x);
+        }
+        this.missOffset = miss ? side.setLength(THREE.MathUtils.randFloat(20, 32)) : new THREE.Vector3();
+      }
+      desired.add(this.missOffset);
+      if (distance > this.passRange && distance < 70) {
+        this.missOffset = null;
+        this.passRange = Infinity;
+      } else {
+        this.passRange = distance;
+      }
     }
     desired.normalize();
 

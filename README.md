@@ -46,6 +46,10 @@ Add `?debug` to the URL to show a debug panel with frame rate, draw calls and ch
 
 Nothing shoots from the ground before stage 6: ground turrets join the plain waves from then on, and the first ground strike is stage 7.
 
+**Repair kits** (white crates with a red cross, hanging from a green balloon) restore one heart when you fly through them. One floats ahead at the start of every stage, two if you are down to half your hearts or less, and gunships, aces, trucks and warships sometimes drop one. They show on the radar as white dots with a red border.
+
+Rammers make passes at you rather than always flying straight into you: on Normal about one pass in three is aimed to hit (Easy 15%, Hard 50%), and the rest skim past, which can earn a near miss.
+
 A completed mission pays a bonus (more for time left, or for the transport's remaining hull); a failed one pays nothing and the campaign carries on.
 
 **Difficulty** (Easy, Normal, Hard, in the Game settings) changes the number of enemies, how often and how accurately they fire, and your armour. Scores are scaled by 0.8, 1 and 1.3 to keep the board fair. A change takes effect from the next run.

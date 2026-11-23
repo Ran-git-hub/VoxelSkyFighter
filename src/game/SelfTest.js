@@ -223,6 +223,30 @@ export function runSelfTest(game) {
     return { passed: armored && exposed && down && !game.boss, detail: `armored ${armored}, exposed ${exposed}, down ${down}` };
   });
 
+  check("a rammer that does not commit flies past", () => {
+    takeOff();
+    game.player.mesh.position.y += 250;
+    const ahead = game.player.mesh.position.clone().addScaledVector(game.player.getShotDirection(), 220);
+    const rammer = game.addEnemy("rammer", ahead);
+    rammer.ramChance = 0;
+    const health = game.player.health;
+    let closest = Infinity;
+    run(10, null, () => {
+      closest = Math.min(closest, rammer.mesh.position.distanceTo(game.player.mesh.position));
+    });
+    return { passed: rammer.alive && game.player.health === health && closest < 60, detail: `closest ${closest.toFixed(1)}` };
+  });
+
+  check("repair kit restores a heart", () => {
+    takeOff();
+    game.player.mesh.position.y += 250;
+    game.player.health = 2;
+    const spot = game.player.mesh.position.clone().addScaledVector(game.player.getShotDirection(), 40);
+    game.spawnPickup(spot);
+    const healed = run(3, () => game.player.health === 3);
+    return { passed: healed && game.pickups.length === 0, detail: `health ${game.player.health}` };
+  });
+
   game.mode = savedMode;
   game.reset();
   const failed = results.filter((result) => !result.passed).length;

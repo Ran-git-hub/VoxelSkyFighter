@@ -15,6 +15,7 @@ import { PlayerPlane } from "../entities/PlayerPlane.js";
 import { EnemyPlane } from "../entities/EnemyPlane.js";
 import { Missile, Projectile } from "../entities/Projectile.js";
 import { Ring } from "../entities/Ring.js";
+import { Pickup } from "../entities/Pickup.js";
 import { Boss, BOSS_MOUNTS, Transport } from "../entities/Boss.js";
 import { AIRCRAFT, DIFFICULTY, aircraftById } from "./Aircraft.js";
 import { VoxelWorld } from "../world/VoxelWorld.js";
@@ -133,6 +134,7 @@ export class Game {
     this.missiles = [];
     this.enemies = [];
     this.rings = [];
+    this.pickups = [];
     this.state = GAME_STATES.START;
     this.mode = "combat";
     this.photo = null;
@@ -389,7 +391,7 @@ export class Game {
   }
 
   reset() {
-    for (const list of [this.projectiles, this.missiles, this.enemies, this.rings]) {
+    for (const list of [this.projectiles, this.missiles, this.enemies, this.rings, this.pickups]) {
       for (const item of list) {
         this.disposeObject(item.mesh);
       }
@@ -648,6 +650,7 @@ export class Game {
     this.updateMissiles(delta);
     this.updateEnemies(delta);
     this.updateRings();
+    this.updatePickups(delta);
     this.emitStuntTrail(delta);
     this.emitFlightEffects(delta);
     this.emitGroundEffects(delta);
@@ -763,6 +766,7 @@ export class Game {
       this.player.missiles = Math.min(this.player.maxMissiles, this.player.missiles + 1);
     }
     this.audio.playWaveStart();
+    this.spawnRepairKits();
     const type = this.stageType(this.wave);
     if (type !== "wave" && this.startMission(type)) {
       return;
@@ -1216,6 +1220,57 @@ export class Game {
     });
   }
 
+  // --- Repair kits --------------------------------------------------------
+
+  // One kit floats along the way at the start of every stage, two when the plane is badly hurt.
+  spawnRepairKits() {
+    const forward = this.forwardFlat();
+    const lateral = new THREE.Vector3(-forward.z, 0, forward.x);
+    const count = this.player.health <= this.player.maxHealth / 2 ? 2 : 1;
+    for (let i = 0; i < count; i += 1) {
+      const position = this.player.mesh.position
+        .clone()
+        .addScaledVector(forward, 260 + i * 160)
+        .addScaledVector(lateral, THREE.MathUtils.randFloatSpread(180));
+      this.spawnPickup(position.setY(this.player.mesh.position.y + THREE.MathUtils.randFloat(-10, 20)));
+    }
+  }
+
+  spawnPickup(position) {
+    let ground = -Infinity;
+    for (const [dx, dz] of [[0, 0], [12, 0], [-12, 0], [0, 12], [0, -12]]) {
+      ground = Math.max(ground, this.groundAt(position.x + dx, position.z + dz));
+    }
+    position.y = THREE.MathUtils.clamp(position.y, ground + 22, PLAYER_CONFIG.maxAltitude - 20);
+    const pickup = new Pickup(position);
+    this.pickups.push(pickup);
+    this.scene.add(pickup.mesh);
+    return pickup;
+  }
+
+  updatePickups(delta) {
+    const player = this.player;
+    this.pickups = this.pickups.filter((pickup) => {
+      pickup.update(delta);
+      const distance = pickup.mesh.position.distanceTo(player.mesh.position);
+      if (pickup.alive && this.state === GAME_STATES.FLYING && distance < pickup.radius + player.radius) {
+        pickup.alive = false;
+        const healed = player.health < player.maxHealth;
+        player.health = Math.min(player.maxHealth, player.health + 1);
+        const points = this.scaled(100);
+        this.score += points;
+        this.hud.showToast(healed ? "REPAIR +1 HEART" : "REPAIR KIT", points, 1);
+        this.effects.flash(pickup.mesh.position, 0x55ff55, 4000, 0.35);
+        this.audio.playRepair();
+      }
+      if (!pickup.alive || distance > 1500) {
+        this.disposeObject(pickup.mesh);
+        return false;
+      }
+      return true;
+    });
+  }
+
   // --- Weapons -----------------------------------------------------------
 
   updateLock(delta) {
@@ -1352,6 +1407,10 @@ export class Game {
     this.effects.explosion(enemy.mesh.position, 0xff9357, large);
     if (enemy.kind === "ship") {
       this.effects.splash(enemy.mesh.position.clone());
+    }
+    // Tougher kills sometimes leave a repair kit hanging in the air.
+    if (["gunner", "ace", "truck", "ship"].includes(enemy.kind) && this.pickups.length < 4 && Math.random() < 0.15) {
+      this.spawnPickup(enemy.mesh.position.clone());
     }
     if (enemy.kind.startsWith("boss")) {
       this.hud.showToast(enemy.kind === "bossGun" ? "GUN DOWN!" : "ENGINE DOWN!", points, 1);
@@ -2009,6 +2068,12 @@ export class Game {
     const contacts = [];
     for (const enemy of this.enemies) {
       const point = enemy.alive && this.radarPoint(enemy.mesh.position, enemy.kind);
+      if (point) {
+        contacts.push(point);
+      }
+    }
+    for (const pickup of this.pickups) {
+      const point = this.radarPoint(pickup.mesh.position, "repair");
       if (point) {
         contacts.push(point);
       }
