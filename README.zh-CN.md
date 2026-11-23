@@ -70,7 +70,7 @@ python3 serve.py
 
 每款飞机的速度、转向、耐久（心数）和导弹数都不同；在标题画面的机库里切换，会显示对比条。Standard 保持原来的手感。
 
-新玩家一开始可以用 Standard、Brick Biplane 和 Super Mario，其余机型用生涯积分（所有战役得分的累计）解锁：Air Show 5,000，Brick Seaplane 10,000，F-16 Style 20,000，Brick Jet 35,000，Brick Airliner 50,000，Brick Storm 75,000。
+新玩家一开始可以用 Standard、Brick Biplane 和 Sunny Prop，其余机型用生涯积分（所有战役得分的累计）解锁：Air Show 5,000，Brick Seaplane 10,000，Strike Jet 20,000，Brick Jet 35,000，Brick Airliner 50,000，Brick Storm 75,000。
 
 ## 排行榜
 

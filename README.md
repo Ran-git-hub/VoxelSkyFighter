@@ -70,7 +70,7 @@ The atlas is kept separately for every world seed. The title screen shows how mu
 
 Each plane has its own speed, turn rate, armour (hearts) and missile rack; pick one in the hangar on the title screen, which shows the comparison bars. Standard keeps the original handling.
 
-New pilots start with Standard, Brick Biplane and Super Mario. The others unlock with career points, the total of all your mission scores: Air Show 5,000, Brick Seaplane 10,000, F-16 Style 20,000, Brick Jet 35,000, Brick Airliner 50,000, Brick Storm 75,000.
+New pilots start with Standard, Brick Biplane and Sunny Prop. The others unlock with career points, the total of all your mission scores: Air Show 5,000, Brick Seaplane 10,000, Strike Jet 20,000, Brick Jet 35,000, Brick Airliner 50,000, Brick Storm 75,000.
 
 ## Leaderboard
 

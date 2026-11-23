@@ -4,10 +4,10 @@
 export const AIRCRAFT = [
   { id: "standard", name: "Standard", speed: 1, turn: 1, armor: 5, missiles: 4, unlock: 0 },
   { id: "brickbiplane", name: "Brick Biplane", speed: 0.78, turn: 1.4, armor: 4, missiles: 2, unlock: 0 },
-  { id: "mario", name: "Super Mario", speed: 0.88, turn: 1.25, armor: 5, missiles: 3, unlock: 0 },
+  { id: "mario", name: "Sunny Prop", speed: 0.88, turn: 1.25, armor: 5, missiles: 3, unlock: 0 },
   { id: "airshow", name: "Air Show", speed: 1.05, turn: 1.32, armor: 3, missiles: 2, unlock: 5000 },
   { id: "brickseaplane", name: "Brick Seaplane", speed: 0.86, turn: 1, armor: 6, missiles: 3, unlock: 10000 },
-  { id: "f16", name: "F-16 Style", speed: 1.2, turn: 0.92, armor: 4, missiles: 6, unlock: 20000 },
+  { id: "f16", name: "Strike Jet", speed: 1.2, turn: 0.92, armor: 4, missiles: 6, unlock: 20000 },
   { id: "brickjet", name: "Brick Jet", speed: 1.26, turn: 0.96, armor: 4, missiles: 5, unlock: 35000 },
   { id: "brickairliner", name: "Brick Airliner", speed: 0.96, turn: 0.66, armor: 8, missiles: 3, unlock: 50000 },
   { id: "brickstorm", name: "Brick Storm", speed: 0.92, turn: 0.78, armor: 7, missiles: 6, unlock: 75000 },
