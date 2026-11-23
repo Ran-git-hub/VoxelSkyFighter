@@ -1061,3 +1061,17 @@ body {
   background: #ffffff;
   box-shadow: 0 0 0 2px #d8312c;
 }
+
+.radar-contact[data-kind="landmark"] {
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  margin-top: -6px;
+  font-size: 11px;
+  line-height: 12px;
+  color: #ffd257;
+  text-align: center;
+  text-shadow: 1px 1px 0 #000000, -1px -1px 0 #000000, 1px -1px 0 #000000, -1px 1px 0 #000000;
+  background: transparent;
+  box-shadow: none;
+}

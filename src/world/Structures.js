@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { BLOCK, L, RUNWAY } from "./TerrainGen.js";
+import { BLOCK, L, RUNWAY, SEA_LEVEL } from "./TerrainGen.js";
 import { hash2 } from "./Noise.js";
 import { getTerrainMaterial } from "./WorldMaterials.js";
 
@@ -257,12 +257,229 @@ function buildTower(b, heightAt, lm) {
   b.box(lm.x + 0.3, base + 33, lm.z - 0.2, lm.x + 4.3, base + 35.5, lm.z + 0.2, L.redWool, { solid: false });
 }
 
+// A grid of office towers with lit window bands, streets between them and beacons on the roofs.
+function buildCity(b, heightAt, lm, random) {
+  const lot = 30;
+  for (let gx = -2; gx <= 2; gx += 1) {
+    for (let gz = -2; gz <= 2; gz += 1) {
+      const centre = Math.hypot(gx, gz);
+      if (centre > 2.6 || random() < 0.12) {
+        continue;
+      }
+      const w = (6 + Math.floor(random() * 3)) * BLOCK;
+      const d = (6 + Math.floor(random() * 3)) * BLOCK;
+      const x = lm.x + gx * lot - w / 2;
+      const z = lm.z + gz * lot - d / 2;
+      const base = foundation(b, heightAt, x - 2, z - 2, x + w + 2, z + d + 2);
+      b.box(x - 4, base, z - 4, x + w + 4, base + 0.3, z + d + 4, L.asphalt, { solid: false, groundAo: false });
+      // Taller towers in the middle give the skyline a peak.
+      const floors = Math.round((3 - centre) * 5 + random() * 8) + 3;
+      const height = floors * 4;
+      const wall = random() < 0.5 ? L.whiteConcrete : L.concrete;
+      b.box(x, base, z, x + w, base + height, z + d, wall);
+      for (let y = base + 3; y < base + height - 1; y += 4) {
+        b.box(x - 0.2, y, z + 1, x, y + 2, z + d - 1, L.window, { solid: false });
+        b.box(x + w, y, z + 1, x + w + 0.2, y + 2, z + d - 1, L.window, { solid: false });
+        b.box(x + 1, y, z - 0.2, x + w - 1, y + 2, z, L.window, { solid: false });
+        b.box(x + 1, y, z + d, x + w - 1, y + 2, z + d + 0.2, L.window, { solid: false });
+      }
+      b.box(x + 2, base + height, z + 2, x + w - 2, base + height + 2, z + d - 2, L.metal);
+      if (floors > 12) {
+        b.box(x + w / 2 - 0.3, base + height + 2, z + d / 2 - 0.3, x + w / 2 + 0.3, base + height + 12, z + d / 2 + 0.3, L.metal, { solid: false });
+        b.box(x + w / 2 - 0.6, base + height + 12, z + d / 2 - 0.6, x + w / 2 + 0.6, base + height + 13.2, z + d / 2 + 0.6, L.lamp, { solid: false });
+      }
+    }
+  }
+}
+
+// A long road bridge over a strait: piers in the water, two suspension towers, high enough to fly under.
+function buildBridge(b, heightAt, lm) {
+  const deck = SEA_LEVEL + 36;
+  const along = lm.axis === "x";
+  // Boxes are described along the span (s) and across it (t), then turned onto the world axes.
+  const span = (s0, y0, t0, s1, y1, t1, layer, options) => {
+    if (along) {
+      b.box(lm.x + s0, y0, lm.z + t0, lm.x + s1, y1, lm.z + t1, layer, options);
+    } else {
+      b.box(lm.x + t0, y0, lm.z + s0, lm.x + t1, y1, lm.z + s1, layer, options);
+    }
+  };
+  const ground = (s) => (along ? heightAt(lm.x + s, lm.z) : heightAt(lm.x, lm.z + s));
+  span(lm.from, deck, -7, lm.to, deck + 2, 7, L.concrete);
+  span(lm.from, deck + 2, -7, lm.to, deck + 2.2, -1, L.asphalt, { solid: false });
+  span(lm.from, deck + 2, 1, lm.to, deck + 2.2, 7, L.asphalt, { solid: false });
+  span(lm.from, deck + 2, -0.5, lm.to, deck + 2.25, 0.5, L.whiteConcrete, { solid: false });
+  span(lm.from, deck + 2, -7.5, lm.to, deck + 3.5, -7, L.metal, { solid: false });
+  span(lm.from, deck + 2, 7, lm.to, deck + 3.5, 7.5, L.metal, { solid: false });
+  // Piers at each end and every 60 blocks, in pairs so the middle stays open to fly through.
+  for (let s = lm.from + 6; s < lm.to - 4; s += 60) {
+    const floor = Math.min(ground(s), SEA_LEVEL) - 4;
+    for (const t of [-7, 4]) {
+      span(s - 2, floor, t, s + 2, deck, t + 3, L.cobble);
+    }
+  }
+  const length = lm.to - lm.from;
+  for (const s of [lm.from + length / 3, lm.from + (length * 2) / 3]) {
+    for (const t of [-8, 6]) {
+      span(s - 2, Math.min(ground(s), SEA_LEVEL) - 4, t, s + 2, deck + 40, t + 2, L.redWool);
+    }
+    span(s - 2, deck + 36, -8, s + 2, deck + 39, 8, L.redWool);
+    span(s - 0.5, deck + 40, -7.5, s + 0.5, deck + 41.2, -6.5, L.lamp, { solid: false });
+    span(s - 0.5, deck + 40, 6.5, s + 0.5, deck + 41.2, 7.5, L.lamp, { solid: false });
+  }
+  // Cables sag from tower to tower and down to the anchorages, drawn as stepped runs.
+  const towers = [lm.from + length / 3, lm.from + (length * 2) / 3];
+  const anchors = [lm.from, towers[0], towers[1], lm.to];
+  for (let k = 0; k < 3; k += 1) {
+    const a = anchors[k];
+    const c = anchors[k + 1];
+    const steps = Math.max(4, Math.round((c - a) / 8));
+    for (let i = 0; i < steps; i += 1) {
+      const u = (i + 0.5) / steps;
+      const ends = [k === 0 ? deck + 3 : deck + 39, k === 2 ? deck + 3 : deck + 39];
+      const y = ends[0] + (ends[1] - ends[0]) * u - (k === 1 ? Math.sin(u * Math.PI) * 30 : 0);
+      for (const t of [-7.3, 7.3]) {
+        span(a + ((c - a) * i) / steps, y, t - 0.3, a + ((c - a) * (i + 1)) / steps, y + 0.6, t + 0.3, L.metal, { solid: false });
+      }
+    }
+  }
+}
+
+// A natural rock arch big enough to fly through.
+function buildArch(b, heightAt, lm, random) {
+  const layer = L[lm.rock] ?? L.sandstone;
+  const along = random() < 0.5;
+  const gap = 26;
+  const top = foundation(b, heightAt, lm.x - 8, lm.z - 8, lm.x + 8, lm.z + 8) + 46;
+  const box = (s0, y0, t0, s1, y1, t1) =>
+    along ? b.box(lm.x + s0, y0, lm.z + t0, lm.x + s1, y1, lm.z + t1, layer) : b.box(lm.x + t0, y0, lm.z + s0, lm.x + t1, y1, lm.z + s1, layer);
+  for (const side of [-1, 1]) {
+    const s = side * (gap + 7);
+    const floor = (along ? heightAt(lm.x + s, lm.z) : heightAt(lm.x, lm.z + s)) - BLOCK * 2;
+    box(s - 9, floor, -8, s + 9, top - 8, 8);
+    box(s - 7, top - 8, -7, s + 7, top, 7);
+  }
+  box(-gap - 14, top - 10, -6, gap + 14, top, 6);
+  box(-gap + 6, top - 13, -5, gap - 6, top - 10, 5);
+  box(-gap - 10, top, -5, gap + 10, top + 3, 5);
+}
+
+// Earth islands hanging in the sky, each with grass on top and an oak tree.
+function buildIslands(b, heightAt, lm, random) {
+  const ground = heightAt(lm.x, lm.z);
+  for (let i = 0; i < 3; i += 1) {
+    const angle = (i / 3) * Math.PI * 2 + random();
+    const x = Math.round((lm.x + Math.cos(angle) * (i === 0 ? 0 : 40)) / BLOCK) * BLOCK;
+    const z = Math.round((lm.z + Math.sin(angle) * (i === 0 ? 0 : 40)) / BLOCK) * BLOCK;
+    const top = Math.min(ground + 95 + i * 18 + random() * 10, 250);
+    const size = i === 0 ? 14 : 9;
+    b.box(x - size, top - 2, z - size, x + size, top, z + size, L.grassTop);
+    for (let layer = 1; layer <= 5; layer += 1) {
+      const inset = layer * (size / 6);
+      b.box(x - size + inset, top - 2 - layer * 3, z - size + inset, x + size - inset, top - 2 - (layer - 1) * 3, z + size - inset, layer < 2 ? L.dirt : L.stone);
+    }
+    b.box(x - 1, top, z - 1, x + 1, top + 10, z + 1, L.logSide);
+    b.box(x - 5, top + 6, z - 5, x + 5, top + 10, z + 5, L.leaves);
+    b.box(x - 3, top + 10, z - 3, x + 3, top + 13, z + 3, L.leaves);
+  }
+}
+
+// A curtain wall with corner towers, a gatehouse and a central keep flying a banner.
+function buildCastle(b, heightAt, lm) {
+  const half = 32;
+  const base = foundation(b, heightAt, lm.x - half - 6, lm.z - half - 6, lm.x + half + 6, lm.z + half + 6);
+  const wall = 16;
+  const x0 = lm.x - half;
+  const x1 = lm.x + half;
+  const z0 = lm.z - half;
+  const z1 = lm.z + half;
+  b.box(x0, base, z0, x1, base + wall, z0 + 3, L.cobble);
+  b.box(x0, base, z1 - 3, x1, base + wall, z1, L.cobble);
+  b.box(x0, base, z0, x0 + 3, base + wall, z1, L.cobble);
+  b.box(x1 - 3, base, z0, x1, base + wall, z1, L.cobble);
+  for (let t = -half; t < half; t += 4) {
+    b.box(lm.x + t, base + wall, z0, lm.x + t + 2, base + wall + 2, z0 + 3, L.cobble);
+    b.box(lm.x + t, base + wall, z1 - 3, lm.x + t + 2, base + wall + 2, z1, L.cobble);
+    b.box(x0, base + wall, lm.z + t, x0 + 3, base + wall + 2, lm.z + t + 2, L.cobble);
+    b.box(x1 - 3, base + wall, lm.z + t, x1, base + wall + 2, lm.z + t + 2, L.cobble);
+  }
+  for (const [cx, cz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) {
+    b.box(cx - 6, base, cz - 6, cx + 6, base + 28, cz + 6, L.cobble);
+    b.box(cx - 7, base + 28, cz - 7, cx + 7, base + 30, cz + 7, L.cobble);
+    b.box(cx - 5, base + 30, cz - 5, cx + 5, base + 33, cz + 5, L.roofTiles);
+    b.box(cx - 3, base + 33, cz - 3, cx + 3, base + 36, cz + 3, L.roofTiles);
+  }
+  b.box(lm.x - 8, base, z0 - 3, lm.x + 8, base + wall + 6, z0 + 5, L.cobble);
+  b.box(lm.x - 3, base, z0 - 3.2, lm.x + 3, base + 9, z0 - 3, L.darkPlanks, { solid: false });
+  b.box(lm.x - 10, base, lm.z - 10, lm.x + 10, base + 32, lm.z + 10, L.cobble);
+  for (let y = base + 8; y < base + 30; y += 8) {
+    b.box(lm.x - 1, y, lm.z - 10.2, lm.x + 1, y + 3, lm.z - 10, L.window, { solid: false });
+  }
+  b.box(lm.x - 11, base + 32, lm.z - 11, lm.x + 11, base + 34, lm.z + 11, L.cobble);
+  b.box(lm.x - 0.3, base + 34, lm.z - 0.3, lm.x + 0.3, base + 46, lm.z + 0.3, L.darkPlanks, { solid: false });
+  b.box(lm.x + 0.3, base + 41, lm.z - 0.2, lm.x + 6.3, base + 45, lm.z + 0.2, L.redWool, { solid: false });
+}
+
+// Several windmills standing in striped wheat fields.
+function buildWindfarm(b, heightAt, lm, random) {
+  // Small patches laid on the ground where they are, so the field follows the terrain.
+  const centre = heightAt(lm.x, lm.z);
+  for (let row = -3; row <= 3; row += 1) {
+    for (let col = -5; col < 5; col += 1) {
+      const x = lm.x + col * 12;
+      const z = lm.z + row * 16 - 6;
+      const ground = heightAt(x + 6, z + 6);
+      if (Math.abs(ground - centre) > 12 || ground <= SEA_LEVEL) {
+        continue;
+      }
+      b.box(x, ground, z, x + 12, ground + 0.6, z + 12, row % 2 ? L.flowerYellow : L.dirt, { solid: false, groundAo: false });
+    }
+  }
+  const spots = [[-38, -30], [6, -42], [40, -10], [-20, 18], [28, 40]];
+  for (const [dx, dz] of spots.slice(0, 3 + Math.floor(random() * 3))) {
+    buildWindmill(b, heightAt, { x: lm.x + dx, z: lm.z + dz });
+  }
+}
+
+// A lighthouse on the point, a wooden pier running out to sea and warehouses on the quay.
+function buildHarbor(b, heightAt, lm, random) {
+  const [sx, sz] = lm.seaward;
+  const across = [-sz, sx];
+  const at = (s, t) => [lm.x + sx * s + across[0] * t, lm.z + sz * s + across[1] * t];
+  const light = at(-6, -34);
+  buildLighthouse(b, heightAt, { x: light[0], z: light[1] });
+  const deck = SEA_LEVEL + 2.5;
+  const [p0x, p0z] = at(-10, -4);
+  const [p1x, p1z] = at(110, 4);
+  b.box(Math.min(p0x, p1x), deck, Math.min(p0z, p1z), Math.max(p0x, p1x), deck + 1, Math.max(p0z, p1z), L.oakPlanks);
+  for (let s = 0; s <= 110; s += 12) {
+    for (const t of [-4, 3]) {
+      const [px, pz] = at(s, t);
+      b.box(px, SEA_LEVEL - 8, pz, px + 1, deck, pz + 1, L.logSide);
+    }
+  }
+  const [h0x, h0z] = at(96, -18);
+  const [h1x, h1z] = at(110, 18);
+  b.box(Math.min(h0x, h1x), deck, Math.min(h0z, h1z), Math.max(h0x, h1x), deck + 1, Math.max(h0z, h1z), L.oakPlanks);
+  for (const t of [14, 30]) {
+    const [hx, hz] = at(-30, t);
+    house(b, heightAt, Math.round(hx / BLOCK) * BLOCK, Math.round(hz / BLOCK) * BLOCK, 12, 10, random);
+  }
+}
+
 const LANDMARK_BUILDERS = {
   village: buildVillage,
   windmill: buildWindmill,
   lighthouse: buildLighthouse,
   pyramid: buildPyramid,
   tower: buildTower,
+  city: buildCity,
+  bridge: buildBridge,
+  arch: buildArch,
+  islands: buildIslands,
+  castle: buildCastle,
+  windfarm: buildWindfarm,
+  harbor: buildHarbor,
 };
 
 export function buildLandmark(lm, heightAt) {

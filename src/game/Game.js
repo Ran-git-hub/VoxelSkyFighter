@@ -47,6 +47,10 @@ const MISSION_TITLES = {
   boss: "SKY FORTRESS",
 };
 const RACE_RINGS = 8;
+const LANDMARK_ICONS = {
+  village: "V", windmill: "W", windfarm: "F", lighthouse: "L", harbor: "H", pyramid: "P",
+  tower: "T", city: "C", castle: "K", islands: "I", bridge: "B", arch: "A",
+};
 const LIGHTNING_HEIGHT = 100;
 
 const STORAGE_PREFIX = "vsf.";
@@ -2069,6 +2073,14 @@ export class Game {
     for (const enemy of this.enemies) {
       const point = enemy.alive && this.radarPoint(enemy.mesh.position, enemy.kind);
       if (point) {
+        contacts.push(point);
+      }
+    }
+    for (const { landmark } of this.world.landmarks.values()) {
+      const point = this.radarPoint(new THREE.Vector3(landmark.x, 0, landmark.z), "landmark");
+      if (point) {
+        point.icon = LANDMARK_ICONS[landmark.type];
+        point.strength = 1;
         contacts.push(point);
       }
     }

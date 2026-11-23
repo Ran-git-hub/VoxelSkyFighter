@@ -56,6 +56,10 @@ A completed mission pays a bonus (more for time left, or for the transport's rem
 
 **Weather** affects flight: wind drifts the plane, rain and storms shake it, a storm sends lightning at planes flying more than 100 m up (one heart per strike), and fog shortens the missile lock range. In Free Flight this can be switched off.
 
+## Landmarks on the radar
+
+Nearby landmarks show on the radar as gold letters: **V** village, **W** windmill, **F** windmill farm, **C** city, **K** castle, **L** lighthouse, **H** harbour, **P** pyramid, **T** tower, **A** rock arch, **I** floating islands, **B** bridge.
+
 ## Aircraft
 
 Each plane has its own speed, turn rate, armour (hearts) and missile rack; pick one in the hangar on the title screen, which shows the comparison bars. Standard keeps the original handling.
@@ -95,7 +99,7 @@ On the runway, hold Shift to build speed, then press W to rotate. Landing slowly
 
 ## Features
 
-- **World**: endlessly generated block terrain with plains, forest, desert, snowfields, mountains, taiga and ocean, plus smoking volcanoes with lava lakes and rivers, glaciers, red-rock canyons, desert oases with palms, and cherry-blossom forests; villages, windmills, lighthouses, pyramids and towers as landmarks; flocks of birds, boats at sea, airport vehicles and chimney smoke.
+- **World**: endlessly generated block terrain with plains, forest, desert, snowfields, mountains, taiga and ocean, plus smoking volcanoes with lava lakes and rivers, glaciers, red-rock canyons, desert oases with palms, and cherry-blossom forests; landmarks including villages, windmills and windmill farms, cities, castles, lighthouses and harbours, pyramids, towers, rock arches, floating islands and suspension bridges over the sea (you can fly under the deck and through the arches); flocks of birds, boats at sea, airport vehicles and chimney smoke.
 - **Combat**: waves that grow tougher (rammers, gunships, aces, ground turrets, hot-air balloons), four mission types, a boss airship every five stages, guns, lock-on homing missiles, and bonus points for stunts and rings.
 - **Aircraft**: 9 to choose from, including 4 in a toy-brick style, each with its own handling; most are unlocked by playing.
 - **Visuals**: dynamic day and night with moon phases; clear, cloudy, rain, thunderstorm and fog weather (with automatic changes); god rays, lens flare, rainbows and aurora; water reflections, cascaded shadows, ambient occlusion, bloom, and relief and highlights on block materials.

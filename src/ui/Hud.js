@@ -381,6 +381,10 @@ export class Hud {
         node.style.top = `${contact.y}%`;
         node.style.opacity = contact.strength;
         node.dataset.kind = contact.kind;
+        const icon = contact.icon ?? "";
+        if (node.textContent !== icon) {
+          node.textContent = icon;
+        }
       }
     });
     this.radarHomeEl.style.left = `${radarHome.x}%`;

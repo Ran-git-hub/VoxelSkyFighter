@@ -506,19 +506,34 @@ export function landmarkInCell(cx, cz) {
     if (Math.hypot(x, z) > 900) {
       sampleColumn(x, z, landmarkColumn);
       const pick = hash2(cx, cz, 94 + SEED_SALT);
+      const biome = landmarkColumn.biome;
       let type = null;
-      if (landmarkColumn.biome === BIOME.PLAINS || landmarkColumn.biome === BIOME.FOREST) {
-        type = pick < 0.55 ? "village" : "windmill";
-      } else if (landmarkColumn.biome === BIOME.BEACH) {
-        type = "lighthouse";
-      } else if (landmarkColumn.biome === BIOME.DESERT) {
-        type = "pyramid";
-      } else if (landmarkColumn.biome === BIOME.MOUNTAIN || landmarkColumn.biome === BIOME.SNOW || landmarkColumn.biome === BIOME.TAIGA) {
-        type = "tower";
+      let extra = null;
+      if (biome === BIOME.PLAINS || biome === BIOME.FOREST || biome === BIOME.CHERRY) {
+        type = pick < 0.32 ? "village" : pick < 0.44 ? "windmill" : pick < 0.58 ? "windfarm" : pick < 0.74 ? "city" : pick < 0.88 ? "castle" : "islands";
+      } else if (biome === BIOME.BEACH) {
+        type = pick < 0.45 ? "lighthouse" : "harbor";
+        extra = { seaward: seawardDirection(x, z) };
+      } else if (biome === BIOME.OCEAN) {
+        extra = bridgeSpan(x, z);
+        type = extra ? "bridge" : null;
+      } else if (biome === BIOME.DESERT) {
+        type = pick < 0.6 ? "pyramid" : "arch";
+        extra = { rock: "sandstone" };
+      } else if (biome === BIOME.CANYON) {
+        type = "arch";
+        extra = { rock: "terracotta" };
+      } else if (biome === BIOME.MOUNTAIN || biome === BIOME.SNOW || biome === BIOME.TAIGA) {
+        type = pick < 0.5 ? "tower" : pick < 0.8 ? "castle" : "islands";
+      }
+      // Wide landmarks need gentle ground, or their foundations become cliffs of cobblestone.
+      const footprint = { city: 70, castle: 40, windfarm: 64 }[type];
+      if (footprint && !flatEnough(x, z, footprint, 8)) {
+        type = biome === BIOME.MOUNTAIN || biome === BIOME.SNOW || biome === BIOME.TAIGA ? "tower" : "windmill";
       }
       if (type) {
-        const radius = { village: 46, windmill: 12, lighthouse: 10, pyramid: 34, tower: 10 }[type];
-        result = { type, x, z, radius, seed: Math.floor(hash2(cx, cz, 95 + SEED_SALT) * 1e9) };
+        const radius = { village: 46, windmill: 12, lighthouse: 10, pyramid: 34, tower: 10, windfarm: 80, city: 90, castle: 48, islands: 12, harbor: 50, bridge: 20, arch: 40 }[type];
+        result = { type, x, z, radius, seed: Math.floor(hash2(cx, cz, 95 + SEED_SALT) * 1e9), ...extra };
       }
     }
   }
@@ -527,6 +542,52 @@ export function landmarkInCell(cx, cz) {
   }
   landmarkCache.set(key, result);
   return result;
+}
+
+function flatEnough(x, z, reach, limitBlocks) {
+  const centre = heightBlocksAt(x, z);
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]]) {
+    const h = heightBlocksAt(x + dx * reach, z + dz * reach);
+    if (Math.abs(h - centre) > limitBlocks || h * BLOCK <= SEA_LEVEL) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Which way the sea lies from a beach spot, as a unit [dx, dz] along an axis.
+function seawardDirection(x, z) {
+  let best = [0, -1];
+  let lowest = Infinity;
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const h = heightBlocksAt(x + dx * 60, z + dz * 60);
+    if (h < lowest) {
+      lowest = h;
+      best = [dx, dz];
+    }
+  }
+  return best;
+}
+
+// A bridge needs land on both sides of the water within reach: returns where the deck starts and ends.
+function bridgeSpan(x, z) {
+  const shore = (dx, dz) => {
+    for (let d = 20; d <= 240; d += 10) {
+      if (heightBlocksAt(x + dx * d, z + dz * d) * BLOCK > SEA_LEVEL + 2) {
+        return d;
+      }
+    }
+    return null;
+  };
+  for (const axis of hash2(Math.round(x), Math.round(z), 96) < 0.5 ? ["x", "z"] : ["z", "x"]) {
+    const [dx, dz] = axis === "x" ? [1, 0] : [0, 1];
+    const forward = shore(dx, dz);
+    const back = shore(-dx, -dz);
+    if (forward && back && forward + back >= 120) {
+      return { axis, from: -back - 10, to: forward + 10 };
+    }
+  }
+  return null;
 }
 
 export function insideLandmark(x, z) {
