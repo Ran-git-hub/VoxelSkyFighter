@@ -213,7 +213,7 @@ export class Game {
     this.deathTimer = 0;
     this.warningTimer = 0;
     this.sortieTime = 0;
-    this.lightningTimer = 15;
+    this.lightningTimer = 20;
     this.gust = { roll: 0, lift: 0, rollTarget: 0, liftTarget: 0, timer: 0 };
   }
 
@@ -1824,15 +1824,26 @@ export class Game {
       this.shake = Math.max(this.shake, rough * 0.12);
     }
 
-    if (this.lightningRisk()) {
-      this.lightningTimer -= delta;
-      if (this.lightningTimer <= 0) {
-        this.lightningTimer = THREE.MathUtils.randFloat(12, 24);
-        weather.strike(this.camera.position, position);
-        this.effects.flash(position, 0xd8e6ff, 20000, 0.25);
-        this.hud.showBanner("LIGHTNING STRIKE!", `Stay below ${LIGHTNING_HEIGHT} m in a storm`);
-        this.damagePlayer(1);
+    // Every climb into the storm gets a fresh grace period, and half the bolts only crack past.
+    if (!this.lightningRisk()) {
+      this.lightningTimer = 20;
+      return;
+    }
+    this.lightningTimer -= delta;
+    if (this.lightningTimer <= 0) {
+      this.lightningTimer = THREE.MathUtils.randFloat(30, 50);
+      if (Math.random() < 0.5) {
+        const angle = Math.random() * Math.PI * 2;
+        const near = position.clone().add(new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).multiplyScalar(THREE.MathUtils.randFloat(25, 40)));
+        weather.strike(this.camera.position, near);
+        this.effects.flash(near, 0xd8e6ff, 20000, 0.25);
+        this.hud.showBanner("CLOSE CALL!", `Stay below ${LIGHTNING_HEIGHT} m in a storm`);
+        return;
       }
+      weather.strike(this.camera.position, position);
+      this.effects.flash(position, 0xd8e6ff, 20000, 0.25);
+      this.hud.showBanner("LIGHTNING STRIKE!", `Stay below ${LIGHTNING_HEIGHT} m in a storm`);
+      this.damagePlayer(1);
     }
   }
 
