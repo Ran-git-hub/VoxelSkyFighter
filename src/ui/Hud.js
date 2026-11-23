@@ -279,9 +279,10 @@ export class Hud {
   showToast(label, points, combo) {
     const toast = document.createElement("div");
     toast.className = "toast";
-    toast.innerHTML = `<span class="toast-label">${label}</span><span class="toast-points">+${points}${
-      combo > 1 ? ` (x${combo})` : ""
-    }</span>`;
+    // A null score shows the label alone (discoveries in free flight).
+    toast.innerHTML = `<span class="toast-label">${label}</span>${
+      points === null ? "" : `<span class="toast-points">+${points}${combo > 1 ? ` (x${combo})` : ""}</span>`
+    }`;
     // animationend never fires while the tab is backgrounded, so time it out too.
     toast.addEventListener("animationend", () => toast.remove());
     setTimeout(() => toast.remove(), 2500);
@@ -484,7 +485,18 @@ export class Hud {
       </div>`;
   }
 
-  setOverlay(state, { score = 0, best = 0, wave = 0, paused = false, seed = 0, climate = "", mode = "combat", board = null, result = null, hangar = null, career = 0, difficulty = "", unlocked = [] } = {}) {
+  atlasMarkup(atlas) {
+    const cells = atlas.kinds
+      .map((kind) => `<span class="atlas-kind${kind.found ? " found" : ""}">${kind.found ? kind.name : "???"}</span>`)
+      .join("");
+    return `
+      <div class="atlas">
+        <div class="atlas-head"><span>WORLD ATLAS</span><span>${atlas.found}/${atlas.total} kinds &middot; ${atlas.places} places</span></div>
+        <div class="atlas-grid">${cells}</div>
+      </div>`;
+  }
+
+  setOverlay(state, { score = 0, best = 0, wave = 0, paused = false, seed = 0, climate = "", mode = "combat", board = null, result = null, hangar = null, career = 0, difficulty = "", unlocked = [], atlas = null } = {}) {
     this.settingsEl.classList.toggle("hidden", !(paused || state === GAME_STATES.START || state === GAME_STATES.GAME_OVER));
     if (state === GAME_STATES.START) {
       this.overlayEl.className = "overlay overlay-title";
@@ -504,6 +516,7 @@ export class Hud {
             <button class="mini-button" type="button" data-action="random-seed">Random</button>
             <span class="climate">${climate}</span>
           </div>
+          ${atlas ? `<p class="atlas-line">Discovered in this world: <strong>${atlas.places}</strong> places &middot; <strong>${atlas.found}/${atlas.total}</strong> kinds (full atlas in the pause menu)</p>` : ""}
           ${hangar ? this.hangarMarkup(hangar) : ""}
           ${this.boardMarkup(board)}
           <p class="hint">Best score: <strong>${best}</strong> &middot; Career: <strong>${career.toLocaleString("en-US")}</strong> &middot; ${difficulty} &middot; <strong>H</strong> controls &middot; <strong>O</strong> photo mode</p>
@@ -542,6 +555,7 @@ export class Hud {
         <div class="title-screen">
           <div class="logo">PAUSED</div>
           <p>Settings are in the top right corner.${mode === "free" ? " Hold <strong>R</strong> to return to the menu." : ""}</p>
+          ${atlas ? this.atlasMarkup(atlas) : ""}
           <div class="press-key">Click or press <strong>Esc</strong> to resume</div>
         </div>
       `;

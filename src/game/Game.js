@@ -26,6 +26,7 @@ import { Life } from "../world/Life.js";
 import { Hud } from "../ui/Hud.js";
 import { DebugPanel } from "../ui/DebugPanel.js";
 import { Leaderboard } from "./Leaderboard.js";
+import { Atlas, kindName } from "./Atlas.js";
 import { CLIMATE, FEATURE_CELL, WORLD_SEED, featureInCell } from "../world/TerrainGen.js";
 import { runSelfTest } from "./SelfTest.js";
 
@@ -148,6 +149,7 @@ export class Game {
     this.difficulty = DIFFICULTY.normal;
     this.respawns = 0;
     this.submitResult = null;
+    this.atlas = new Atlas(WORLD_SEED);
     this.leaderboard = new Leaderboard();
     this.leaderboard.onChange = () => {
       if (this.state === GAME_STATES.START || (this.state === GAME_STATES.GAME_OVER && this.deathTimer <= 0)) {
@@ -311,6 +313,7 @@ export class Game {
       career: this.career,
       difficulty: `Difficulty: ${(DIFFICULTY[this.settings.difficulty] ?? DIFFICULTY.normal).label}`,
       unlocked: this.unlockedNow,
+      atlas: this.atlas.summary(),
     });
   }
 
@@ -500,6 +503,7 @@ export class Game {
     }
     if (playing) {
       this.simulate(delta);
+      this.checkDiscoveries(delta);
     }
     if (!this.paused) {
       this.life.update(delta, this.player.mesh.position, this.effects);
@@ -570,6 +574,52 @@ export class Game {
         pending: chunks.pending,
       });
     }
+  }
+
+  // Flying close to a landmark or a terrain feature for the first time logs it in this world's atlas.
+  checkDiscoveries(delta) {
+    this.discoveryTimer = (this.discoveryTimer ?? 0) - delta;
+    if (this.discoveryTimer > 0) {
+      return;
+    }
+    this.discoveryTimer = 0.4;
+    const focus = this.player.mesh.position;
+    const near = (x, z, reach) => Math.hypot(x - focus.x, z - focus.z) < reach;
+    for (const { landmark } of this.world.landmarks.values()) {
+      if (near(landmark.x, landmark.z, landmark.radius + 90)) {
+        this.discover(`${landmark.type}:${landmark.x}:${landmark.z}`, landmark.type);
+      }
+    }
+    const cx = Math.floor(focus.x / FEATURE_CELL);
+    const cz = Math.floor(focus.z / FEATURE_CELL);
+    for (let dz = -1; dz <= 1; dz += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const feature = featureInCell(cx + dx, cz + dz);
+        if (feature && near(feature.x, feature.z, feature.radius * 0.7)) {
+          this.discover(`${feature.type}:${Math.round(feature.x)}:${Math.round(feature.z)}`, feature.type);
+        }
+      }
+    }
+  }
+
+  discover(key, kind) {
+    const result = this.atlas.discover(key, kind);
+    if (!result) {
+      return;
+    }
+    const name = kindName(kind);
+    const points = this.mode === "combat" ? this.scaled(result.newKind ? 1000 : 250) : null;
+    if (points) {
+      this.score += points;
+    }
+    // A new kind gets the banner alone; a toast at the same moment would sit on top of it.
+    if (result.newKind) {
+      const { found, total } = this.atlas.summary();
+      this.hud.showBanner(`NEW DISCOVERY: ${name.toUpperCase()}`, `${found} of ${total} kinds found in this world${points ? ` - +${points}` : ""}`);
+    } else {
+      this.hud.showToast(`DISCOVERED: ${name.toUpperCase()}`, points, 1);
+    }
+    this.audio.playRing();
   }
 
   emitVolcanoSmoke(delta) {

@@ -1,5 +1,6 @@
 import { GAME_STATES } from "./constants.js";
 import { EnemyPlane } from "../entities/EnemyPlane.js";
+import { landmarkInCell } from "../world/TerrainGen.js";
 
 const STEP = 1 / 60;
 
@@ -245,6 +246,41 @@ export function runSelfTest(game) {
     game.spawnPickup(spot);
     const healed = run(3, () => game.player.health === 3);
     return { passed: healed && game.pickups.length === 0, detail: `health ${game.player.health}` };
+  });
+
+  check("flying past a landmark discovers it once", () => {
+    const saved = game.atlas.snapshot();
+    try {
+      takeOff();
+      let landmark = null;
+      for (let r = 1; r < 6 && !landmark; r += 1) {
+        for (let i = -r; i <= r && !landmark; i += 1) {
+          for (let j = -r; j <= r && !landmark; j += 1) {
+            landmark = landmarkInCell(i, j);
+          }
+        }
+      }
+      if (!landmark) {
+        return { passed: false, detail: "no landmark nearby" };
+      }
+      game.atlas.restore({ places: [], kinds: [] });
+      const focus = { x: landmark.x, y: 0, z: landmark.z };
+      for (let i = 0; i < 40; i += 1) {
+        game.world.updateLandmarks(focus);
+      }
+      game.player.mesh.position.set(landmark.x, game.groundAt(landmark.x, landmark.z) + 120, landmark.z);
+      const before = game.score;
+      game.discoveryTimer = 0;
+      game.checkDiscoveries(0.1);
+      const gained = game.score - before;
+      game.discoveryTimer = 0;
+      game.checkDiscoveries(0.1);
+      const again = game.score - before - gained;
+      const known = game.atlas.has(`${landmark.type}:${landmark.x}:${landmark.z}`);
+      return { passed: known && gained >= 1000 && again === 0, detail: `${landmark.type} +${gained}, repeat +${again}` };
+    } finally {
+      game.atlas.restore(saved);
+    }
   });
 
   game.mode = savedMode;

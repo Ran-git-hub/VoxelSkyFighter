@@ -60,6 +60,12 @@ A completed mission pays a bonus (more for time left, or for the transport's rem
 
 Nearby landmarks show on the radar as gold letters: **V** village, **W** windmill, **F** windmill farm, **C** city, **K** castle, **L** lighthouse, **H** harbour, **P** pyramid, **T** tower, **A** rock arch, **I** floating islands, **B** bridge.
 
+## World atlas
+
+Flying close to a landmark or a volcano, glacier, red canyon or oasis for the first time logs it in the world atlas. There are 16 kinds to find. In a mission each new place is worth 250 points, and the first of each kind 1,000. Free flight logs discoveries too, without points.
+
+The atlas is kept separately for every world seed. The title screen shows how much of the current world you have found, and the pause menu lists every kind, with the ones still to find shown as ???.
+
 ## Aircraft
 
 Each plane has its own speed, turn rate, armour (hearts) and missile rack; pick one in the hangar on the title screen, which shows the comparison bars. Standard keeps the original handling.
