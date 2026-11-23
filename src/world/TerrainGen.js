@@ -40,10 +40,15 @@ export const LAYERS = [
   "gravel", "logSide", "logTop", "leaves", "spruceLeaves", "asphalt", "whiteConcrete", "concrete",
   "bricks", "oakPlanks", "window", "metal", "redWool", "cactus", "tallGrass", "flowerRed",
   "flowerYellow", "lamp", "clay", "spruceLog", "roofTiles", "cobble", "whiteWool", "darkPlanks",
+  "basalt", "lava", "ice", "packedIce", "terracotta", "redSand", "paleTerracotta", "cherryLeaves",
+  "palmLeaves", "palmLog",
 ];
 export const L = Object.fromEntries(LAYERS.map((name, index) => [name, index]));
 
-export const BIOME = { OCEAN: 0, BEACH: 1, PLAINS: 2, FOREST: 3, DESERT: 4, SNOW: 5, MOUNTAIN: 6, AIRPORT: 7, TAIGA: 8 };
+export const BIOME = {
+  OCEAN: 0, BEACH: 1, PLAINS: 2, FOREST: 3, DESERT: 4, SNOW: 5, MOUNTAIN: 6, AIRPORT: 7, TAIGA: 8,
+  VOLCANO: 9, GLACIER: 10, CANYON: 11, OASIS: 12, CHERRY: 13,
+};
 
 const noiseContinent = createSimplex(WORLD_SEED);
 const noiseHills = createSimplex(WORLD_SEED + 1);
@@ -52,6 +57,8 @@ const noiseRidge = createSimplex(WORLD_SEED + 3);
 const noiseCanyon = createSimplex(WORLD_SEED + 4);
 const noiseTemp = createSimplex(WORLD_SEED + 5);
 const noiseMoist = createSimplex(WORLD_SEED + 6);
+const noiseCherry = createSimplex(WORLD_SEED + 7);
+const noiseFeature = createSimplex(WORLD_SEED + 8);
 
 const smoothstep = (a, b, x) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -64,6 +71,105 @@ function airportWeight(x, z) {
   const dz = Math.max(Math.abs(z) - 560, 0);
   return 1 - smoothstep(0, 280, Math.hypot(dx, dz));
 }
+
+// Volcanoes, glaciers, red-rock canyons and oases are placed features: at most one per cell,
+// kept wholly inside it so a column only ever has to look at its own cell.
+export const FEATURE_CELL = 1600;
+const FEATURE_RADIUS = { volcano: 320, glacier: 380, canyon: 420, oasis: 80 };
+const featureCache = new Map();
+
+function featureClimate(x, z) {
+  const distance = Math.hypot(x, z);
+  const continent = fbm(noiseContinent, x * 0.00042, z * 0.00042, 4) + 0.55 * (1 - smoothstep(600, 1800, distance));
+  return {
+    land: smoothstep(-0.3, 0.02, continent),
+    temperature: fbm(noiseTemp, x * 0.0005, z * 0.0005, 2) + CLIMATE_TEMPERATURE,
+    moisture: fbm(noiseMoist, x * 0.0006 + 100, z * 0.0006 - 50, 2) + CLIMATE_MOISTURE,
+  };
+}
+
+export function featureInCell(cx, cz) {
+  const key = cx * 65536 + cz;
+  if (featureCache.has(key)) {
+    return featureCache.get(key);
+  }
+  let feature = null;
+  const roll = hash2(cx, cz, 401 + SEED_SALT);
+  const type = roll < 0.16 ? "volcano" : roll < 0.3 ? "glacier" : roll < 0.44 ? "canyon" : roll < 0.7 ? "oasis" : null;
+  if (type) {
+    const radius = FEATURE_RADIUS[type];
+    const margin = radius + 20;
+    const x = cx * FEATURE_CELL + margin + hash2(cx, cz, 402 + SEED_SALT) * (FEATURE_CELL - margin * 2);
+    const z = cz * FEATURE_CELL + margin + hash2(cx, cz, 403 + SEED_SALT) * (FEATURE_CELL - margin * 2);
+    // Keep the airfield and its approach corridors clear.
+    const clear = !(Math.abs(x) < 700 + radius && Math.abs(z) < 2600 + radius);
+    const climate = featureClimate(x, z);
+    const fits = {
+      volcano: climate.land > 0.9,
+      glacier:
+        climate.land > 0.9 &&
+        climate.temperature < -0.12 &&
+        [[1, 0], [-1, 0], [0, 1], [0, -1]].every(([dx, dz]) => featureClimate(x + dx * radius, z + dz * radius).temperature < 0),
+      canyon: climate.land > 0.9 && climate.temperature > -0.05 && climate.moisture < 0.15,
+      oasis: climate.land > 0.95 && climate.temperature > 0.2 && climate.moisture < 0.02,
+    }[type];
+    if (clear && fits) {
+      feature = { type, x, z, radius, seed: hash2(cx, cz, 404 + SEED_SALT) };
+    }
+  }
+  if (featureCache.size > 4096) {
+    featureCache.clear();
+  }
+  featureCache.set(key, feature);
+  return feature;
+}
+
+export function featureAt(x, z) {
+  const feature = featureInCell(Math.floor(x / FEATURE_CELL), Math.floor(z / FEATURE_CELL));
+  if (!feature) {
+    return null;
+  }
+  const dx = x - feature.x;
+  const dz = z - feature.z;
+  return dx * dx + dz * dz < feature.radius * feature.radius ? feature : null;
+}
+
+export const VOLCANO_PEAK = 185;
+const CRATER = 46;
+
+// Reshapes the height inside a feature; returns the blend weight (1 at the centre).
+function shapeFeature(feature, x, z, height, column) {
+  const distance = Math.hypot(x - feature.x, z - feature.z);
+  const weight = 1 - smoothstep(feature.radius * 0.55, feature.radius, distance);
+  column.featureDistance = distance;
+  if (feature.type === "volcano") {
+    const slope = Math.pow(1 - distance / feature.radius, 1.25);
+    let cone = 8 + VOLCANO_PEAK * slope;
+    if (distance < CRATER) {
+      const rim = 8 + VOLCANO_PEAK * Math.pow(1 - CRATER / feature.radius, 1.25);
+      cone = rim - 26 * (1 - smoothstep(CRATER - 16, CRATER, distance));
+    }
+    column.height = Math.max(height, lerp(height, cone, smoothstep(0, 0.35, 1 - distance / feature.radius)));
+  } else if (feature.type === "glacier") {
+    const dome = 40 + 22 * (1 - distance / feature.radius) + fbm(noiseFeature, x * 0.006, z * 0.006, 2) * 5;
+    const crevasse = Math.abs(fbm(noiseFeature, x * 0.004 + 50, z * 0.004, 2)) < 0.035 ? 12 : 0;
+    column.height = lerp(height, dome - crevasse, weight);
+  } else if (feature.type === "canyon") {
+    const plateau = 54 + ridged(noiseFeature, x * 0.003, z * 0.003, 3) * 34;
+    let mesa = Math.floor(plateau / 10) * 10;
+    const cut = Math.abs(fbm(noiseFeature, x * 0.0026 - 80, z * 0.0026 + 40, 3));
+    if (cut < 0.09) {
+      mesa = lerp(8, mesa, smoothstep(0.03, 0.09, cut));
+    }
+    column.height = lerp(height, mesa, weight);
+  } else {
+    const pond = 1 - smoothstep(18, 42, distance);
+    column.height = lerp(height, SEA_LEVEL - 4, pond);
+  }
+  return weight;
+}
+
+const featureColumn = { height: 0, featureDistance: 0 };
 
 export function sampleColumn(x, z, out) {
   const distance = Math.hypot(x, z);
@@ -103,6 +209,13 @@ export function sampleColumn(x, z, out) {
   }
   height = lerp(height, 0, airport);
 
+  const feature = airport < 0.01 ? featureAt(x, z) : null;
+  let featureWeight = 0;
+  if (feature) {
+    featureWeight = shapeFeature(feature, x, z, height, featureColumn);
+    height = featureColumn.height;
+  }
+
   const blocks = Math.round(height / BLOCK);
   const top = blocks * BLOCK;
   const temperature = fbm(noiseTemp, x * 0.0005, z * 0.0005, 2) + CLIMATE_TEMPERATURE - Math.max(0, top - 40) * 0.004;
@@ -127,6 +240,15 @@ export function sampleColumn(x, z, out) {
     biome = BIOME.FOREST;
   } else {
     biome = BIOME.PLAINS;
+  }
+  if ((biome === BIOME.FOREST || biome === BIOME.PLAINS) && fbm(noiseCherry, x * 0.0011 - 300, z * 0.0011 + 70, 2) > 0.36) {
+    biome = BIOME.CHERRY;
+  }
+  if (feature && biome !== BIOME.OCEAN) {
+    const reach = feature.type === "oasis" ? featureColumn.featureDistance < 64 : featureWeight > 0.5;
+    if (reach) {
+      biome = { volcano: BIOME.VOLCANO, glacier: BIOME.GLACIER, canyon: BIOME.CANYON, oasis: BIOME.OASIS }[feature.type];
+    }
   }
 
   out.blocks = blocks;
@@ -183,6 +305,42 @@ export function columnLayers(biome, top, steep, x, z, out) {
     out[1] = out[0];
     out[2] = L.sand;
     out[3] = L.stone;
+    return out;
+  }
+  if (biome === BIOME.VOLCANO) {
+    const feature = featureAt(x, z);
+    const distance = feature ? Math.hypot(x - feature.x, z - feature.z) : Infinity;
+    // A lava lake fills the crater, and a few lava rivers run down the flanks.
+    const angle = feature ? Math.atan2(z - feature.z, x - feature.x) : 0;
+    const river = Math.abs(Math.sin(angle * 3 + (feature?.seed ?? 0) * 6.28)) < 0.06 && distance > 40 && distance < 230;
+    const lava = distance < CRATER - 14 || river;
+    out[0] = lava ? L.lava : hash2(x >> 1, z >> 1, 5) > 0.85 ? L.gravel : L.basalt;
+    out[1] = lava ? L.lava : L.basalt;
+    out[2] = L.basalt;
+    out[3] = L.basalt;
+    return out;
+  }
+  if (biome === BIOME.GLACIER) {
+    out[0] = steep ? L.packedIce : hash2(x >> 2, z >> 2, 6) > 0.6 ? L.snow : L.ice;
+    out[1] = L.packedIce;
+    out[2] = L.packedIce;
+    out[3] = L.stone;
+    return out;
+  }
+  if (biome === BIOME.CANYON) {
+    // The terraces show as stripes because each step lands in a different band.
+    const band = Math.floor(top / 6) % 3;
+    out[0] = steep ? (band === 0 ? L.paleTerracotta : L.terracotta) : L.redSand;
+    out[1] = band === 0 ? L.paleTerracotta : band === 1 ? L.terracotta : L.redSand;
+    out[2] = L.terracotta;
+    out[3] = L.terracotta;
+    return out;
+  }
+  if (biome === BIOME.OASIS) {
+    out[0] = top <= SEA_LEVEL + 2 ? L.sand : L.grassTop;
+    out[1] = top <= SEA_LEVEL + 2 ? L.sand : L.grassSide;
+    out[2] = L.sand;
+    out[3] = L.sandstone;
     return out;
   }
   if (biome === BIOME.BEACH || biome === BIOME.DESERT) {
@@ -242,6 +400,27 @@ export const TREE_SHAPES = [
     ],
   },
   {
+    name: "cherry",
+    boxes: [
+      { min: [-0.5, 0, -0.5], max: [0.5, 4, 0.5], layer: L.darkPlanks, sway: 0 },
+      { min: [-3, 3.2, -3], max: [3, 5.2, 3], layer: L.cherryLeaves, sway: 0.6 },
+      { min: [-2, 5.2, -2], max: [2, 6.4, 2], layer: L.cherryLeaves, sway: 1 },
+      { min: [-3.4, 2.6, -1], max: [-2.6, 3.2, 1], layer: L.cherryLeaves, sway: 0.5 },
+      { min: [2.6, 2.6, -1], max: [3.4, 3.2, 1], layer: L.cherryLeaves, sway: 0.5 },
+    ],
+  },
+  {
+    name: "palm",
+    boxes: [
+      { min: [-0.4, 0, -0.4], max: [0.4, 6.5, 0.4], layer: L.palmLog, sway: 0 },
+      { min: [-3.2, 6.3, -0.5], max: [3.2, 6.8, 0.5], layer: L.palmLeaves, sway: 1 },
+      { min: [-0.5, 6.3, -3.2], max: [0.5, 6.8, 3.2], layer: L.palmLeaves, sway: 1 },
+      { min: [-0.8, 6.5, -0.8], max: [0.8, 7.3, 0.8], layer: L.palmLeaves, sway: 1 },
+      { min: [-3.6, 5.6, -0.4], max: [-3, 6.3, 0.4], layer: L.palmLeaves, sway: 1 },
+      { min: [3, 5.6, -0.4], max: [3.6, 6.3, 0.4], layer: L.palmLeaves, sway: 1 },
+    ],
+  },
+  {
     name: "cactus",
     boxes: [
       { min: [-0.5, 0, -0.5], max: [0.5, 3.5, 0.5], layer: L.cactus, sway: 0 },
@@ -252,12 +431,16 @@ export const TREE_SHAPES = [
 ];
 
 export const TREE_CELL = 8;
+const shape = (name) => TREE_SHAPES.findIndex((tree) => tree.name === name);
 const TREE_DENSITY = {
-  [BIOME.FOREST]: { chance: 0.62, type: 0 },
-  [BIOME.PLAINS]: { chance: 0.045, type: 0 },
-  [BIOME.TAIGA]: { chance: 0.5, type: 1 },
-  [BIOME.SNOW]: { chance: 0.12, type: 1 },
-  [BIOME.DESERT]: { chance: 0.05, type: 2 },
+  [BIOME.FOREST]: { chance: 0.62, type: shape("oak") },
+  [BIOME.PLAINS]: { chance: 0.045, type: shape("oak") },
+  [BIOME.TAIGA]: { chance: 0.5, type: shape("spruce") },
+  [BIOME.SNOW]: { chance: 0.12, type: shape("spruce") },
+  [BIOME.DESERT]: { chance: 0.05, type: shape("cactus") },
+  [BIOME.CANYON]: { chance: 0.03, type: shape("cactus") },
+  [BIOME.CHERRY]: { chance: 0.45, type: shape("cherry") },
+  [BIOME.OASIS]: { chance: 0.55, type: shape("palm") },
 };
 
 const treeColumn = { blocks: 0, biome: 0, airport: 0 };

@@ -25,7 +25,7 @@ import { Life } from "../world/Life.js";
 import { Hud } from "../ui/Hud.js";
 import { DebugPanel } from "../ui/DebugPanel.js";
 import { Leaderboard } from "./Leaderboard.js";
-import { CLIMATE, WORLD_SEED } from "../world/TerrainGen.js";
+import { CLIMATE, FEATURE_CELL, WORLD_SEED, featureInCell } from "../world/TerrainGen.js";
 import { runSelfTest } from "./SelfTest.js";
 
 const TRICK_LABELS = {
@@ -36,7 +36,8 @@ const TRICK_LABELS = {
 };
 
 // Every fifth stage is the boss; two of the four stages in between are missions, in this rotation.
-const MISSION_ORDER = ["strike", "race", "escort", "antiship"];
+// The first two missions are air-only so ground fire does not arrive before the player has settled in.
+const MISSION_ORDER = ["race", "escort", "strike", "antiship"];
 const MISSION_TITLES = {
   strike: "GROUND STRIKE",
   race: "RING RACE",
@@ -505,6 +506,7 @@ export class Game {
           }
         }
       }
+      this.emitVolcanoSmoke(delta);
       this.effects.update(delta);
       if (this.state === GAME_STATES.GAME_OVER && this.deathTimer > 0) {
         this.deathTimer -= delta;
@@ -561,6 +563,26 @@ export class Game {
         chunks: chunks.visible,
         pending: chunks.pending,
       });
+    }
+  }
+
+  emitVolcanoSmoke(delta) {
+    this.volcanoTimer = (this.volcanoTimer ?? 0) - delta;
+    if (this.volcanoTimer > 0) {
+      return;
+    }
+    this.volcanoTimer = 0.12;
+    const focus = this.player.mesh.position;
+    const cx = Math.floor(focus.x / FEATURE_CELL);
+    const cz = Math.floor(focus.z / FEATURE_CELL);
+    for (let dz = -1; dz <= 1; dz += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const feature = featureInCell(cx + dx, cz + dz);
+        if (feature?.type === "volcano" && Math.hypot(feature.x - focus.x, feature.z - focus.z) < 2200) {
+          const crater = new THREE.Vector3(feature.x, this.world.heightAt(feature.x, feature.z) + 4, feature.z);
+          this.effects.volcano(crater, this.atmosphere.weather.wind);
+        }
+      }
     }
   }
 
@@ -709,7 +731,7 @@ export class Game {
     add("rammer", Math.min(8, 1 + wave));
     add("gunner", wave >= 2 ? Math.min(5, 1 + Math.floor((wave - 2) / 2)) : 0);
     add("ace", Math.min(3, Math.floor(wave / 4)));
-    add("turret", wave >= 3 ? Math.min(3, 1 + Math.floor((wave - 3) / 3)) : 0);
+    add("turret", wave >= 6 ? Math.min(3, 1 + Math.floor((wave - 6) / 3)) : 0);
     if (kinds.length === 0) {
       kinds.push("rammer");
     }

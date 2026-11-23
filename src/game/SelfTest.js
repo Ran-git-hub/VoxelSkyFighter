@@ -163,7 +163,7 @@ export function runSelfTest(game) {
   });
 
   check("strike mission completes", () => {
-    const mission = startStage(2);
+    const mission = startStage(7);
     if (mission?.type !== "strike") {
       return { passed: false, detail: `stage ${mission?.type ?? "plain wave"}` };
     }
@@ -176,7 +176,7 @@ export function runSelfTest(game) {
   });
 
   check("race mission counts rings", () => {
-    const mission = startStage(4);
+    const mission = startStage(2);
     if (mission?.type !== "race") {
       return { passed: false, detail: `stage ${mission?.type}` };
     }
@@ -193,7 +193,7 @@ export function runSelfTest(game) {
   });
 
   check("escort fails when the transport is lost", () => {
-    const mission = startStage(7);
+    const mission = startStage(4);
     if (mission?.type !== "escort") {
       return { passed: false, detail: `stage ${mission?.type}` };
     }

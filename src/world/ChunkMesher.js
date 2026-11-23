@@ -370,7 +370,7 @@ export function buildChunk({ x0, z0, size, cols, vegetation, grass }) {
     for (let j = 1; j <= cols; j += 1) {
       for (let i = 1; i <= cols; i += 1) {
         const biome = biomes[j * stride + i];
-        if (biome !== BIOME.PLAINS && biome !== BIOME.FOREST && biome !== BIOME.TAIGA && biome !== BIOME.AIRPORT) {
+        if (![BIOME.PLAINS, BIOME.FOREST, BIOME.TAIGA, BIOME.AIRPORT, BIOME.CHERRY, BIOME.OASIS].includes(biome)) {
           continue;
         }
         const worldX = x0 + (i - 0.5) * step;

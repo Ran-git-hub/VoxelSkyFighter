@@ -306,6 +306,22 @@ export class Effects {
     this.solid.spawn(position, v, THREE.MathUtils.randFloat(3.2, 4.4), 0.8, 3.4, c1, c2, 0, 0.25);
   }
 
+  // A volcano's ash column: big, dark, slow, leaning downwind, with the odd ember thrown up.
+  volcano(position, wind) {
+    v.set(wind.x * 2 + THREE.MathUtils.randFloatSpread(9), THREE.MathUtils.randFloat(9, 15), wind.y * 2 + THREE.MathUtils.randFloatSpread(9));
+    const shade = THREE.MathUtils.randFloat(0.12, 0.22);
+    c1.setRGB(shade, shade * 0.95, shade * 0.9);
+    c2.setRGB(shade * 1.6, shade * 1.6, shade * 1.65);
+    const start = position.clone().add(new THREE.Vector3(THREE.MathUtils.randFloatSpread(14), 0, THREE.MathUtils.randFloatSpread(14)));
+    this.solid.spawn(start, v, THREE.MathUtils.randFloat(9, 12), 5, 18, c1, c2, -0.3, 0.08);
+    if (Math.random() < 0.3) {
+      c1.setRGB(8, 3, 0.5);
+      c2.setRGB(1.5, 0.2, 0);
+      v.set(THREE.MathUtils.randFloatSpread(10), THREE.MathUtils.randFloat(14, 24), THREE.MathUtils.randFloatSpread(10));
+      this.glow.spawn(start, v, 1.6, 1.2, 0.3, c1, c2, 12);
+    }
+  }
+
   raindrop(position) {
     c1.setRGB(1.1, 1.2, 1.35);
     c2.setRGB(0.6, 0.7, 0.85);

@@ -18,6 +18,11 @@ const ROUGHNESS = {
   lamp: 0.4,
   clay: 0.7,
   roofTiles: 0.7,
+  ice: 0.12,
+  packedIce: 0.3,
+  lava: 0.6,
+  basalt: 0.85,
+  terracotta: 0.8,
 };
 
 // How deep the texel pattern reads as relief, and what share of texels catch the sun as glints.
@@ -43,13 +48,21 @@ const BUMP = {
   tallGrass: 0,
   flowerRed: 0,
   flowerYellow: 0,
+  basalt: 1.8,
+  lava: 0.6,
+  ice: 0.25,
+  packedIce: 0.5,
+  terracotta: 0.9,
+  paleTerracotta: 0.9,
+  redSand: 0.45,
 };
-const GLINT = { snow: 0.14, snowSide: 0.08, sand: 0.07, sandstone: 0.03, stone: 0.02, gravel: 0.03 };
+const GLINT = { snow: 0.14, snowSide: 0.08, sand: 0.07, sandstone: 0.03, stone: 0.02, gravel: 0.03, ice: 0.22, packedIce: 0.1, redSand: 0.05, basalt: 0.02 };
+const EMISSION = { lamp: 2.5, lava: 3.2 };
 
 export const layerUniforms = {
   uBlockArray: { value: null },
   uLayerRoughness: { value: LAYERS.map((name) => ROUGHNESS[name] ?? 0.92) },
-  uLayerEmission: { value: LAYERS.map((name) => (name === "lamp" ? 2.5 : 0)) },
+  uLayerEmission: { value: LAYERS.map((name) => EMISSION[name] ?? 0) },
   uLayerBump: { value: LAYERS.map((name) => BUMP[name] ?? 0.7) },
   uLayerGlint: { value: LAYERS.map((name) => GLINT[name] ?? 0) },
   uWet: { value: 0 },

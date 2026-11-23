@@ -11,7 +11,7 @@ const TINTS = [new THREE.Color(0.85, 0.95, 0.8), new THREE.Color(1.08, 1.02, 0.9
 
 // Distant trees drop their small detail boxes; at that range only the
 // silhouette survives the fog anyway.
-const FAR_BOX_COUNT = { oak: 2, spruce: 3, cactus: 1 };
+const FAR_BOX_COUNT = { oak: 2, spruce: 3, cherry: 2, palm: 3, cactus: 1 };
 
 function treeGeometry(shape, far) {
   const b = new VoxelBuilder();

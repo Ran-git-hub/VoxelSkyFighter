@@ -290,6 +290,62 @@ const PAINTERS = {
     }
     speckle(ctx, ["#9a9a9a"], 0.08);
   },
+  basalt(ctx) {
+    fill(ctx, ["#3a3638", "#332f31", "#423d3f", "#2c292b"]);
+    speckle(ctx, ["#1f1c1e", "#4f494b"], 0.14);
+  },
+  lava(ctx) {
+    fill(ctx, ["#ff6a10", "#ff7f1f", "#f2560a", "#ff9530"]);
+    for (let i = 0; i < 9; i += 1) {
+      const x = Math.floor(ctx.random() * TEXTURE_SIZE);
+      const y = Math.floor(ctx.random() * TEXTURE_SIZE);
+      for (let k = 0; k < 3; k += 1) {
+        ctx.pixel((x + k) % TEXTURE_SIZE, y, "#ffd24a");
+      }
+    }
+    speckle(ctx, ["#b8300a"], 0.06);
+  },
+  ice(ctx) {
+    fill(ctx, ["#a9d4f5", "#b4dbf8", "#9fcbee", "#bfe2fa"]);
+    for (const [x, y] of [[2, 3], [3, 4], [4, 5], [9, 9], [10, 10], [11, 11], [12, 12]]) {
+      ctx.pixel(x, y, "#e6f5ff");
+    }
+  },
+  packedIce(ctx) {
+    fill(ctx, ["#8dbbe6", "#84b2de", "#96c3ec", "#7ea9d6"]);
+    speckle(ctx, ["#a9d0f2", "#6f9bc8"], 0.1);
+  },
+  terracotta(ctx) {
+    fill(ctx, ["#b35a33", "#a8522e", "#bb6239"]);
+    speckle(ctx, ["#934428"], 0.08);
+  },
+  redSand(ctx) {
+    fill(ctx, ["#c8743c", "#be6c36", "#d17d44", "#b96631"]);
+    speckle(ctx, ["#a85c2b", "#dc8b52"], 0.1);
+  },
+  paleTerracotta(ctx) {
+    fill(ctx, ["#d6b08c", "#cfa883", "#dcb894"]);
+    speckle(ctx, ["#bf9a76"], 0.08);
+  },
+  cherryLeaves(ctx) {
+    fill(ctx, ["#f2a7c6", "#ee9cbf", "#f6b6d0", "#e88fb6"]);
+    speckle(ctx, ["#ffd6e6", "#d97aa3"], 0.14);
+  },
+  palmLeaves(ctx) {
+    fill(ctx, ["#4f9a2e", "#468c28", "#58a535"]);
+    for (let y = 0; y < TEXTURE_SIZE; y += 1) {
+      ctx.pixel(7, y, "#3a7020");
+      ctx.pixel(8, y, "#3a7020");
+    }
+  },
+  palmLog(ctx) {
+    fill(ctx, ["#9c7a4f", "#8f6f47", "#a5845a"]);
+    for (let y = 0; y < TEXTURE_SIZE; y += 3) {
+      for (let x = 0; x < TEXTURE_SIZE; x += 1) {
+        ctx.pixel(x, y, "#6e5534");
+      }
+    }
+  },
 };
 
 function seededRandom(seed) {

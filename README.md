@@ -35,14 +35,16 @@ Add `?debug` to the URL to show a debug panel with frame rate, draw calls and ch
 | Stage | What happens |
 | --- | --- |
 | 1, 3, 6, 8, ... | A wave of enemy aircraft, plus bonus rings and balloons |
-| 2, 4, 7, 9, ... | A mission, rotating through the four below |
+| 2, 4, 7, 9, ... | A mission, rotating through the four below in this order |
 | 5, 10, 15, ... | Boss: the Sky Fortress airship |
 
-- **Ground strike**: destroy a truck convoy and its flak guns before the timer runs out.
 - **Ring race**: fly through 8 blue rings in time.
 - **Escort**: keep the green transport alive until it reaches its destination; most attackers go for it, not you.
+- **Ground strike**: destroy a truck convoy and its flak guns before the timer runs out.
 - **Sink the fleet**: sink every warship (a world with no sea nearby gets a ground strike instead).
 - **Sky Fortress**: its guns can be shot off first; its engines stay armoured until the guns are gone, then it launches drones. Destroy both engines and it falls out of the sky.
+
+Nothing shoots from the ground before stage 6: ground turrets join the plain waves from then on, and the first ground strike is stage 7.
 
 A completed mission pays a bonus (more for time left, or for the transport's remaining hull); a failed one pays nothing and the campaign carries on.
 
@@ -89,7 +91,7 @@ On the runway, hold Shift to build speed, then press W to rotate. Landing slowly
 
 ## Features
 
-- **World**: endlessly generated block terrain with plains, forest, desert, snowfields, mountains, taiga and ocean; villages, windmills, lighthouses, pyramids and towers as landmarks; flocks of birds, boats at sea, airport vehicles and chimney smoke.
+- **World**: endlessly generated block terrain with plains, forest, desert, snowfields, mountains, taiga and ocean, plus smoking volcanoes with lava lakes and rivers, glaciers, red-rock canyons, desert oases with palms, and cherry-blossom forests; villages, windmills, lighthouses, pyramids and towers as landmarks; flocks of birds, boats at sea, airport vehicles and chimney smoke.
 - **Combat**: waves that grow tougher (rammers, gunships, aces, ground turrets, hot-air balloons), four mission types, a boss airship every five stages, guns, lock-on homing missiles, and bonus points for stunts and rings.
 - **Aircraft**: 9 to choose from, including 4 in a toy-brick style, each with its own handling; most are unlocked by playing.
 - **Visuals**: dynamic day and night with moon phases; clear, cloudy, rain, thunderstorm and fog weather (with automatic changes); god rays, lens flare, rainbows and aurora; water reflections, cascaded shadows, ambient occlusion, bloom, and relief and highlights on block materials.
