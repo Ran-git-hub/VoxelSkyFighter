@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { L, TREE_SHAPES } from "./TerrainGen.js";
+import { L, TREE_CELL, TREE_SHAPES, treeVisibleAtDensity } from "./TerrainGen.js";
 import { VoxelBuilder } from "./Structures.js";
 import { getVegetationMaterial } from "./WorldMaterials.js";
 
@@ -86,13 +86,12 @@ export class Vegetation {
     const nearSq = NEAR_TREE_DISTANCE * NEAR_TREE_DISTANCE;
     const plantSq = this.plantRadius * this.plantRadius;
     const treeSq = this.treeRadius * this.treeRadius;
-    const keepEvery = this.density >= 1 ? 1 : Math.round(1 / this.density);
 
     for (const chunk of chunks) {
       const trees = chunk.trees;
       if (trees) {
         for (let i = 0; i < trees.length; i += 6) {
-          if (keepEvery > 1 && (i / 6) % keepEvery !== 0) {
+          if (this.density < 1 && !treeVisibleAtDensity(Math.floor(trees[i + 1] / TREE_CELL), Math.floor(trees[i + 3] / TREE_CELL), this.density)) {
             continue;
           }
           const dx = trees[i + 1] - focus.x;

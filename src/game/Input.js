@@ -51,7 +51,9 @@ export class Input {
     this.invertY = false;
     this.locked = false;
     this.everLocked = false;
+    this.flightPaused = false;
     this.onLockChange = null;
+    this.onConfirm = null;
     // Raw mouse travel and wheel clicks since the last read, for the photo camera.
     this.look = { x: 0, y: 0, wheel: 0 };
 
@@ -59,10 +61,15 @@ export class Input {
       if (event.target instanceof HTMLElement && event.target.matches("input, select, textarea")) {
         return;
       }
-      if (GAME_KEYS.has(event.code) && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      const hasModifier = event.metaKey || event.ctrlKey || event.altKey;
+      if (GAME_KEYS.has(event.code) && !hasModifier) {
         event.preventDefault();
       }
       if (!event.repeat) {
+        if (event.code === "Enter" && !hasModifier && this.onConfirm) {
+          this.onConfirm();
+          return;
+        }
         if (STUNT_KEYS[event.code]) {
           this.stuntQueue.push(STUNT_KEYS[event.code]);
         }
@@ -78,7 +85,7 @@ export class Input {
     this.onMouseMove = (event) => {
       this.look.x += event.movementX;
       this.look.y += event.movementY;
-      if (!this.canFly) {
+      if (!this.canFly || this.flightPaused) {
         return;
       }
       const scale = this.mouseSensitivity / STICK_TRAVEL;

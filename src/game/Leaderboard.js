@@ -37,13 +37,31 @@ function writeJson(key, value) {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+function randomUuid() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < 16; i += 1) {
+      bytes[i] = Math.floor(Math.random() * 256);
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 // Every finished run is sent to the serverless endpoint, which keeps the ten best. When it is
 // missing or unreachable the board falls back to this browser's own ten best runs.
 export class Leaderboard {
   constructor() {
     this.pilot = readJson(PILOT_KEY, null);
     if (!this.pilot?.id || !this.pilot?.name) {
-      this.pilot = { id: crypto.randomUUID(), name: randomPilotName() };
+      this.pilot = { id: randomUuid(), name: randomPilotName() };
       writeJson(PILOT_KEY, this.pilot);
     }
     this.online = null;
@@ -125,7 +143,7 @@ export class Leaderboard {
       await this.refresh();
       return { rank: result.rank };
     } catch {
-      this.lastRun = crypto.randomUUID();
+      this.lastRun = randomUuid();
       const rank = this.saveLocal({ run: this.lastRun, score, wave, seed });
       this.useLocal();
       this.changed();

@@ -475,6 +475,10 @@ export function treeInCell(cx, cz, out) {
   return out;
 }
 
+export function treeVisibleAtDensity(cx, cz, density) {
+  return density >= 1 || hash2(cx, cz, 97 + SEED_SALT) < density;
+}
+
 export function treeBoxes(tree, target) {
   target.length = 0;
   for (const box of TREE_SHAPES[tree.type].boxes) {

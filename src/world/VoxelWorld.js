@@ -10,6 +10,7 @@ import {
   landmarkInCell,
   treeBoxes,
   treeInCell,
+  treeVisibleAtDensity,
 } from "./TerrainGen.js";
 import { getTerrainMaterial, getWaterMaterial } from "./WorldMaterials.js";
 import { Vegetation } from "./Vegetation.js";
@@ -466,6 +467,9 @@ export class VoxelWorld {
     const maxCz = Math.floor((position.z + reach) / TREE_CELL);
     for (let cz = minCz; cz <= maxCz; cz += 1) {
       for (let cx = minCx; cx <= maxCx; cx += 1) {
+        if (!treeVisibleAtDensity(cx, cz, this.vegetation.density)) {
+          continue;
+        }
         const tree = this.treeAt(cx, cz);
         if (!tree || position.y - verticalRadius > tree.y + tree.scale * 8) {
           continue;
