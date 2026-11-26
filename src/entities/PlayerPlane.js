@@ -368,6 +368,7 @@ export class PlayerPlane {
     this.missiles = this.maxMissiles;
     this.throttle = PLAYER_CONFIG.defaultThrottle;
     this.boost = 1;
+    this.boostExhausted = false;
     this.boosting = false;
     this.braking = false;
     this.fireTimer = 0;
@@ -441,9 +442,13 @@ export class PlayerPlane {
       return;
     }
 
-    // Snap back to the entry attitude so a full turn never accumulates into the Euler angles.
-    this.mesh.rotation.z = this.stunt.startRoll;
-    this.mesh.rotation.x = this.stunt.startPitch;
+    // Snap only the stunt axis back to its entry angle so a full turn never accumulates
+    // into Euler angles, without discarding adjustments made on the free axis.
+    if (this.stunt.type === "roll") {
+      this.mesh.rotation.z = this.stunt.startRoll;
+    } else if (this.stunt.type === "loop") {
+      this.mesh.rotation.x = this.stunt.startPitch;
+    }
     this.justCompletedStunt = this.stunt.type;
     this.stunt = null;
   }
@@ -627,7 +632,10 @@ export class PlayerPlane {
     const keyPitch = (input.pitchUp ? 1 : 0) - (input.pitchDown ? 1 : 0);
     const turn = THREE.MathUtils.clamp(target.x + keyTurn * 0.85, -1, 1);
 
-    this.boosting = Boolean(input.throttle) && this.boost > 0 && !input.brake;
+    if (!input.throttle || this.boost >= 0.25) {
+      this.boostExhausted = false;
+    }
+    this.boosting = Boolean(input.throttle) && !this.boostExhausted && this.boost > 0 && !input.brake;
     this.braking = Boolean(input.brake);
     const lever = (input.throttleUp ? 1 : 0) - (input.throttleDown ? 1 : 0);
     this.throttle = THREE.MathUtils.clamp(this.throttle + lever * 0.6 * delta, 0, 1);
@@ -636,6 +644,9 @@ export class PlayerPlane {
       0,
       1
     );
+    if (this.boost <= 0) {
+      this.boostExhausted = true;
+    }
 
     // A slower plane turns tighter, which is what makes the air brake worth using in a fight.
     const agility = THREE.MathUtils.clamp(PLAYER_CONFIG.maxFlySpeed / Math.max(this.speed, 24), 0.7, 1.5) * this.stats.turn;

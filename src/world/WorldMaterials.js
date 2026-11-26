@@ -263,7 +263,13 @@ void main() {
   if (uReflectionMix > 0.0) {
     // Nudging the lookup along the ripple normal makes the mirror image wobble in the same pixel grid.
     vec4 mirrored = uReflectionMatrix * vec4(vWorldPos.x + normal.x * 9.0, vWorldPos.y, vWorldPos.z + normal.z * 9.0, 1.0);
-    reflection = mix(reflection, texture2DProj(uReflection, mirrored).rgb, uReflectionMix);
+    if (mirrored.w <= 0.001) {
+      mirrored = uReflectionMatrix * vec4(vWorldPos, 1.0);
+    }
+    if (mirrored.w > 0.001) {
+      vec2 reflUv = clamp(mirrored.xy / mirrored.w, vec2(0.001), vec2(0.999));
+      reflection = mix(reflection, texture2D(uReflection, reflUv).rgb, uReflectionMix);
+    }
   }
 
   float shade = cloudShadow(vWorldPos);

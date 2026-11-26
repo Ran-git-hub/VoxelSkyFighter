@@ -112,16 +112,17 @@ export class Game {
     // Automated runs cannot take pointer lock, so debug mode flies without it.
     this.input = new Input(canvas, { requireLock: !this.debug });
     this.input.onLockChange = (locked) => this.setPaused(!locked && this.input.requireLock && PLAYING_STATES.has(this.state));
+    this.input.onConfirm = () => this.handleConfirm();
     this.audio = new AudioManager();
     this.settings = { ...DEFAULT_SETTINGS, ...loadStored("settings", {}) };
     this.best = loadStored("best", 0);
     // Career points unlock planes. Saves from before unlocks existed start from their best score.
     this.career = loadStored("career", null) ?? this.best;
     store("career", this.career);
-    if (!this.isUnlocked(this.settings.plane)) {
+    if (!AIRCRAFT.some((plane) => plane.id === this.settings.plane) || !this.isUnlocked(this.settings.plane)) {
       this.settings.plane = "standard";
     }
-    this.hangarIndex = AIRCRAFT.findIndex((plane) => plane.id === this.settings.plane);
+    this.hangarIndex = Math.max(0, AIRCRAFT.findIndex((plane) => plane.id === this.settings.plane));
     this.unlockedNow = [];
     this.hud = new Hud(hudRoot, {
       settings: this.settings,
@@ -487,7 +488,7 @@ export class Game {
     this.handlePresses(delta);
     // Covers a refused lock request as well as Esc: without the pointer there is no way to steer.
     const unlocked = this.input.requireLock && !this.input.locked && PLAYING_STATES.has(this.state);
-    this.lockWait = unlocked ? (this.lockWait ?? 0) + frameTime : 0;
+    this.lockWait = unlocked ? (this.lockWait ?? 0) + delta : 0;
     if (this.lockWait > 0.6 && !this.paused) {
       // No lock and no error either: treat it as a refusal so the fallback can take over.
       this.input.onLockError();
@@ -537,7 +538,7 @@ export class Game {
     this.audio.updateHeartbeat(playing && this.player.health <= 1);
     this.audio.tickMusic();
     if (this.photo) {
-      this.updatePhotoCamera(frameTime);
+      this.updatePhotoCamera(delta);
     } else {
       this.updateCamera(delta);
     }
@@ -1477,6 +1478,10 @@ export class Game {
     const player = this.player;
     const engaged = this.state === GAME_STATES.FLYING;
     this.enemies = this.enemies.filter((enemy) => {
+      if (!enemy.alive) {
+        this.disposeObject(enemy.mesh);
+        return false;
+      }
       const target = enemy.target?.alive ? enemy.target : player;
       const shot = enemy.update(delta, target, this.world);
       if (shot && engaged) {
@@ -1571,12 +1576,20 @@ export class Game {
         continue;
       }
 
+      if (this.state !== GAME_STATES.FLYING) {
+        continue;
+      }
       const distance = enemy.mesh.position.distanceTo(position);
       if (distance < enemy.radius + 2.4) {
-        enemy.alive = false;
-        this.effects.explosion(enemy.mesh.position, 0xff5b5b);
-        this.audio.playExplosion(enemy.mesh.position);
-        this.damagePlayer(enemy.kind === "balloon" ? 1 : 2);
+        if (enemy.armored || enemy.kind.startsWith("boss") || enemy.kind === "ship") {
+          this.damageEnemy(enemy, 2);
+          this.killPlayer();
+        } else {
+          enemy.alive = false;
+          this.effects.explosion(enemy.mesh.position, 0xff5b5b);
+          this.audio.playExplosion(enemy.mesh.position);
+          this.damagePlayer(enemy.kind === "balloon" ? 1 : 2);
+        }
         continue;
       }
 
@@ -1891,6 +1904,8 @@ export class Game {
   togglePhoto() {
     if (this.photo) {
       this.photo = null;
+      this.input.flightPaused = false;
+      this.input.consumeLook();
       this.hud.setPhotoMode(false);
       this.camera.fov = 68;
       this.camera.updateProjectionMatrix();
@@ -1902,6 +1917,7 @@ export class Game {
       pitch: Math.asin(THREE.MathUtils.clamp(direction.y, -1, 1)),
       fov: this.camera.fov,
     };
+    this.input.flightPaused = true;
     this.input.consumeLook();
     this.hud.setPhotoMode(true);
   }
