@@ -1086,6 +1086,8 @@ export class Game {
       return true;
     });
     if (this.transport) {
+      // Attackers still aimed at it fall back to the player once it is no longer alive.
+      this.transport.alive = false;
       this.disposeObject(this.transport.mesh);
       this.transport = null;
     }
